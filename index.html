@@ -280,6 +280,23 @@ button { font-family:'DM Sans',sans-serif; }
   .shop-item-source { display:none; }
 }
 
+/* ── Login Screen ── */
+.login-screen {
+  min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px;
+}
+.login-box {
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:32px 28px; max-width:360px; width:100%; box-shadow:var(--shadow-md); text-align:center;
+}
+.login-box .logo { justify-content:center; margin-bottom:20px; }
+.login-box h2 { font-family:'DM Serif Display',serif; font-size:22px; margin-bottom:6px; }
+.login-box p { font-size:13px; color:var(--text-muted); margin-bottom:20px; }
+.login-box .form-group { text-align:left; }
+.login-error { color:#C0392B; font-size:13px; margin-top:10px; display:none; }
+.login-box .btn-primary { width:100%; justify-content:center; margin-top:14px; padding:12px; }
+.app-wrap { display:none; }
+.app-wrap.visible { display:block; }
+
 /* ── Animations ── */
 @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
 .day-card, .sunday-card, .recipe-item, .toddler-card { animation:fadeIn 0.3s ease forwards; }
@@ -292,6 +309,30 @@ button { font-family:'DM Sans',sans-serif; }
 </head>
 <body>
 
+<!-- LOGIN SCREEN -->
+<div class="login-screen" id="loginScreen">
+  <div class="login-box">
+    <div class="logo">
+      <div class="logo-icon">🍽</div>
+      <h1>Meal <span>Planner</span></h1>
+    </div>
+    <h2>Welcome back</h2>
+    <p>Sign in to access your meal plans</p>
+    <div class="form-group">
+      <label class="form-label">Email</label>
+      <input class="form-input" id="loginEmail" type="email" placeholder="you@email.com">
+    </div>
+    <div class="form-group" style="margin-top:10px;">
+      <label class="form-label">Password</label>
+      <input class="form-input" id="loginPass" type="password" placeholder="••••••••" onkeypress="if(event.key==='Enter')doLogin()">
+    </div>
+    <div class="login-error" id="loginError"></div>
+    <button class="btn-primary" onclick="doLogin()">Sign In</button>
+  </div>
+</div>
+
+<!-- APP (hidden until logged in) -->
+<div class="app-wrap" id="appWrap">
 <div class="header">
   <div class="header-top">
     <div class="logo">
@@ -302,6 +343,7 @@ button { font-family:'DM Sans',sans-serif; }
       <button class="btn-icon" title="Staple ingredients" onclick="openStaplesModal()">🏪</button>
       <button class="btn-icon" title="Export data" onclick="exportData()">📤</button>
       <button class="btn-icon" title="Import data" onclick="document.getElementById('importFile').click()">📥</button>
+      <button class="btn-icon" title="Log out" onclick="doLogout()">🚪</button>
       <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
     </div>
   </div>
@@ -409,6 +451,9 @@ button { font-family:'DM Sans',sans-serif; }
   </div>
 </div>
 
+</div>
+</div><!-- end app-wrap -->
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -417,13 +462,102 @@ button { font-family:'DM Sans',sans-serif; }
 // ═══════════════════════════════════════
 const SUPABASE_URL = 'https://mbmsdukfvrokrfxrzggo.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_wInlRPB2LvSUc2U0uk9jJQ_K2ZAXZbF';
+const AUTH_URL = SUPABASE_URL + '/auth/v1';
 const API = SUPABASE_URL + '/rest/v1';
-const HEADERS = {
-  'apikey': SUPABASE_KEY,
-  'Authorization': 'Bearer ' + SUPABASE_KEY,
-  'Content-Type': 'application/json',
-  'Prefer': 'return=representation'
-};
+let ACCESS_TOKEN = null;
+let REFRESH_TOKEN = null;
+
+function getHeaders() {
+  return {
+    'apikey': SUPABASE_KEY,
+    'Authorization': 'Bearer ' + (ACCESS_TOKEN || SUPABASE_KEY),
+    'Content-Type': 'application/json',
+    'Prefer': 'return=representation'
+  };
+}
+
+// ═══════════════════════════════════════
+// AUTH
+// ═══════════════════════════════════════
+async function doLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass = document.getElementById('loginPass').value;
+  const errEl = document.getElementById('loginError');
+  errEl.style.display = 'none';
+
+  if (!email || !pass) { errEl.textContent = 'Please enter email and password'; errEl.style.display = 'block'; return; }
+
+  try {
+    const r = await fetch(AUTH_URL + '/token?grant_type=password', {
+      method: 'POST',
+      headers: { 'apikey': SUPABASE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: pass })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error_description || data.msg || 'Login failed');
+
+    ACCESS_TOKEN = data.access_token;
+    REFRESH_TOKEN = data.refresh_token;
+    localStorage.setItem('mp_access_token', ACCESS_TOKEN);
+    localStorage.setItem('mp_refresh_token', REFRESH_TOKEN);
+    localStorage.setItem('mp_token_expiry', Date.now() + (data.expires_in * 1000));
+
+    showApp();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.style.display = 'block';
+  }
+}
+
+async function refreshSession() {
+  if (!REFRESH_TOKEN) return false;
+  try {
+    const r = await fetch(AUTH_URL + '/token?grant_type=refresh_token', {
+      method: 'POST',
+      headers: { 'apikey': SUPABASE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: REFRESH_TOKEN })
+    });
+    const data = await r.json();
+    if (!r.ok) return false;
+
+    ACCESS_TOKEN = data.access_token;
+    REFRESH_TOKEN = data.refresh_token;
+    localStorage.setItem('mp_access_token', ACCESS_TOKEN);
+    localStorage.setItem('mp_refresh_token', REFRESH_TOKEN);
+    localStorage.setItem('mp_token_expiry', Date.now() + (data.expires_in * 1000));
+    return true;
+  } catch (e) { return false; }
+}
+
+function doLogout() {
+  ACCESS_TOKEN = null;
+  REFRESH_TOKEN = null;
+  localStorage.removeItem('mp_access_token');
+  localStorage.removeItem('mp_refresh_token');
+  localStorage.removeItem('mp_token_expiry');
+  document.getElementById('appWrap').classList.remove('visible');
+  document.getElementById('loginScreen').style.display = 'flex';
+}
+
+async function checkSession() {
+  ACCESS_TOKEN = localStorage.getItem('mp_access_token');
+  REFRESH_TOKEN = localStorage.getItem('mp_refresh_token');
+  const expiry = parseInt(localStorage.getItem('mp_token_expiry') || '0');
+
+  if (!ACCESS_TOKEN) return false;
+
+  // If token expires in less than 5 minutes, refresh it
+  if (Date.now() > expiry - 300000) {
+    return await refreshSession();
+  }
+  return true;
+}
+
+function showApp() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appWrap').classList.add('visible');
+  init();
+}
 
 // ═══════════════════════════════════════
 // STATE
@@ -445,28 +579,32 @@ let dbAvailable = false;
 // ═══════════════════════════════════════
 async function sbGet(table, query = '') {
   try {
-    const r = await fetch(`${API}/${table}?${query}`, { headers: HEADERS });
+    const r = await fetch(`${API}/${table}?${query}`, { headers: getHeaders() });
+    if (r.status === 401) { if (await refreshSession()) return sbGet(table, query); return null; }
     if (!r.ok) throw new Error(r.statusText);
     return await r.json();
   } catch (e) { console.error('sbGet', table, e); return null; }
 }
 async function sbPost(table, data) {
   try {
-    const r = await fetch(`${API}/${table}`, { method: 'POST', headers: HEADERS, body: JSON.stringify(data) });
+    const r = await fetch(`${API}/${table}`, { method: 'POST', headers: getHeaders(), body: JSON.stringify(data) });
+    if (r.status === 401) { if (await refreshSession()) return sbPost(table, data); return null; }
     if (!r.ok) throw new Error(await r.text());
     return await r.json();
   } catch (e) { console.error('sbPost', table, e); return null; }
 }
 async function sbPut(table, id, data) {
   try {
-    const r = await fetch(`${API}/${table}?id=eq.${id}`, { method: 'PATCH', headers: { ...HEADERS, 'Prefer': 'return=representation' }, body: JSON.stringify(data) });
+    const r = await fetch(`${API}/${table}?id=eq.${id}`, { method: 'PATCH', headers: getHeaders(), body: JSON.stringify(data) });
+    if (r.status === 401) { if (await refreshSession()) return sbPut(table, id, data); return null; }
     if (!r.ok) throw new Error(await r.text());
     return await r.json();
   } catch (e) { console.error('sbPut', table, e); return null; }
 }
 async function sbDelete(table, id) {
   try {
-    await fetch(`${API}/${table}?id=eq.${id}`, { method: 'DELETE', headers: HEADERS });
+    const r = await fetch(`${API}/${table}?id=eq.${id}`, { method: 'DELETE', headers: getHeaders() });
+    if (r.status === 401) { if (await refreshSession()) return sbDelete(table, id); return false; }
     return true;
   } catch (e) { console.error('sbDelete', table, e); return false; }
 }
@@ -1246,8 +1384,14 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(e => console.log('SW registration failed:', e));
 }
 
-// INIT
-init();
+// STARTUP — check for existing session
+(async () => {
+  const hasSession = await checkSession();
+  if (hasSession) {
+    showApp();
+  }
+  // Otherwise login screen is already showing
+})();
 </script>
 </body>
 </html>
