@@ -346,6 +346,56 @@ button { font-family:'DM Sans',sans-serif; }
 .app-wrap { display:none; }
 .app-wrap.visible { display:block; }
 
+/* ── Today's Dinner Card ── */
+.tonight-card {
+  background:linear-gradient(135deg, var(--accent-light) 0%, var(--surface) 100%);
+  border:1px solid #F0D5C2; border-radius:var(--radius); padding:20px;
+  margin-bottom:24px; position:relative; overflow:hidden;
+}
+.tonight-card::before { content:''; position:absolute; top:0; left:0; width:4px; height:100%; background:var(--accent); }
+.tonight-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--accent); margin-bottom:4px; }
+.tonight-name { font-family:'DM Serif Display',serif; font-size:24px; color:var(--text); }
+.tonight-meta { display:flex; gap:12px; margin-top:6px; flex-wrap:wrap; }
+.tonight-empty { color:var(--text-muted); font-size:14px; margin-top:4px; }
+.btn-cooked {
+  margin-top:12px; padding:8px 16px; background:var(--green); color:white; border:none;
+  border-radius:var(--radius-sm); font-family:'DM Sans',sans-serif; font-size:13px;
+  font-weight:600; cursor:pointer; transition:all 0.2s;
+}
+.btn-cooked:hover { background:#4A7A4E; }
+
+/* ── Clear Button (prominent) ── */
+.btn-clear {
+  width:34px; height:34px; border:1px solid #E8B4B4; border-radius:var(--radius-sm);
+  background:var(--surface); cursor:pointer; display:flex; align-items:center; justify-content:center;
+  font-size:13px; color:#C0392B; transition:all 0.2s; font-weight:700;
+}
+.btn-clear:hover { background:#FDE8E8; border-color:#C0392B; }
+
+/* ── What Can I Make ── */
+.wcim-search { margin-bottom:16px; }
+.wcim-tags { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:16px; }
+.wcim-tag {
+  padding:5px 12px; border:1px solid var(--border); border-radius:20px; background:var(--surface);
+  font-size:12px; font-weight:500; cursor:pointer; transition:all 0.2s; display:flex; align-items:center; gap:4px;
+}
+.wcim-tag.selected { background:var(--green-light); border-color:var(--green); color:var(--green); }
+.wcim-tag .wcim-remove { font-size:14px; margin-left:2px; }
+.wcim-result { 
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:14px 16px; margin-bottom:8px; box-shadow:var(--shadow-sm);
+}
+.wcim-result-name { font-family:'DM Serif Display',serif; font-size:16px; margin-bottom:4px; }
+.wcim-match { font-size:12px; color:var(--green); font-weight:600; }
+.wcim-missing { font-size:12px; color:var(--text-light); margin-top:4px; }
+
+/* ── Delete Confirm ── */
+.btn-delete {
+  padding:8px 16px; background:#C0392B; color:white; border:none; border-radius:var(--radius-sm);
+  font-family:'DM Sans',sans-serif; font-size:13px; font-weight:600; cursor:pointer; transition:all 0.2s;
+}
+.btn-delete:hover { background:#A93226; }
+
 /* ── Animations ── */
 @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
 .day-card, .sunday-card, .recipe-item, .toddler-card { animation:fadeIn 0.3s ease forwards; }
@@ -400,12 +450,14 @@ button { font-family:'DM Sans',sans-serif; }
     <button class="tab active" data-tab="week">This Week</button>
     <button class="tab" data-tab="shopping">Shopping List</button>
     <button class="tab" data-tab="recipes">My Recipes</button>
+    <button class="tab" data-tab="wcim">What Can I Make?</button>
   </div>
 </div>
 
 <div class="main">
   <!-- THIS WEEK TAB -->
   <div class="tab-content active" id="tab-week">
+    <div id="tonight-view"></div>
     <div class="generate-bar">
       <div class="section-title">This Week's Plan</div>
       <button class="btn-primary" onclick="generateWeek()">🔀 Generate Week</button>
@@ -451,6 +503,22 @@ button { font-family:'DM Sans',sans-serif; }
       <button class="btn-primary" onclick="openRecipeModal()">+ Add Recipe</button>
     </div>
     <div id="recipes-view"><div class="loading">Loading</div></div>
+  </div>
+
+  <!-- WHAT CAN I MAKE TAB -->
+  <div class="tab-content" id="tab-wcim">
+    <div class="generate-bar">
+      <div class="section-title">What Can I Make?</div>
+      <button class="btn-outline" onclick="clearWcim()">Clear All</button>
+    </div>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">Tap ingredients you have — matching recipes appear below.</p>
+    <div class="search-wrap wcim-search">
+      <span class="search-icon">🔍</span>
+      <input class="search-input" id="wcimSearch" type="text" placeholder="Search ingredients..." autocomplete="off" oninput="handleWcimSearch()" onfocus="handleWcimSearch()">
+      <div class="search-dropdown" id="wcimDropdown"></div>
+    </div>
+    <div class="wcim-tags" id="wcimTags"></div>
+    <div id="wcim-results"></div>
   </div>
 </div>
 
@@ -803,6 +871,11 @@ document.querySelectorAll('.tab').forEach(t => {
 function renderWeek() {
   const days = ['sunday', 'mon', 'tue', 'wed', 'thu', 'fri'];
   const dayLabels = { sunday: 'Sun', mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri' };
+  const dayMap = { 0: 'sunday', 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri' };
+
+  // Render tonight's dinner
+  renderTonight(dayLabels);
+
   let html = '';
 
   // Sunday
@@ -819,9 +892,9 @@ function renderWeek() {
         </div>` : ''}
       </div>
       <div class="card-actions">
-        ${sunRecipe ? `<button class="btn-small" title="Clear meal" onclick="clearMeal('sunday')">✕</button>` : ''}
-        <button class="btn-small ${locks.sunday ? 'locked' : ''}" onclick="toggleLock('sunday')">${locks.sunday ? '🔒' : '🔓'}</button>
         <button class="btn-small" onclick="swapMeal('sunday')">🔀</button>
+        <button class="btn-small ${locks.sunday ? 'locked' : ''}" onclick="toggleLock('sunday')">${locks.sunday ? '🔒' : '🔓'}</button>
+        ${sunRecipe ? `<button class="btn-clear" title="Clear meal" onclick="clearMeal('sunday')">✕</button>` : ''}
       </div>
     </div>
     ${sunRecipe ? renderIngredientDropdown(sunRecipe) : ''}
@@ -844,9 +917,9 @@ function renderWeek() {
         </div>
         <div class="card-actions">
           <button class="btn-small ${isLeftover ? 'locked' : ''}" title="${isLeftover ? 'Remove leftovers' : 'Mark as leftovers'}" onclick="toggleLeftover('${day}')" style="${isLeftover ? 'background:var(--green);border-color:var(--green);color:white;' : ''}">🍱</button>
-          ${!isLeftover ? `${recipe ? `<button class="btn-small" title="Clear meal" onclick="clearMeal('${day}')">✕</button>` : ''}
+          ${!isLeftover ? `<button class="btn-small" onclick="swapMeal('${day}')">🔀</button>
           <button class="btn-small ${locks[day] ? 'locked' : ''}" onclick="toggleLock('${day}')">${locks[day] ? '🔒' : '🔓'}</button>
-          <button class="btn-small" onclick="swapMeal('${day}')">🔀</button>` : ''}
+          ${recipe ? `<button class="btn-clear" title="Clear meal" onclick="clearMeal('${day}')">✕</button>` : ''}` : ''}
         </div>
       </div>
       ${!isLeftover && recipe ? renderIngredientDropdown(recipe) : ''}
@@ -856,6 +929,49 @@ function renderWeek() {
 
   document.getElementById('week-view').innerHTML = html;
   renderToddler();
+}
+
+function renderTonight(dayLabels) {
+  const dayOfWeek = new Date().getDay(); // 0=Sun
+  const dayMap = { 0: 'sunday', 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: null };
+  const today = dayMap[dayOfWeek];
+  const todayLabel = today ? (dayLabels || {})[today] || '' : '';
+
+  let html = '';
+  if (!today || (today !== 'sunday' && leftovers[today])) {
+    // Weekend (Sat) or leftovers day
+    if (today && leftovers[today]) {
+      html = `<div class="tonight-card"><div class="tonight-label">Tonight's dinner</div><div class="tonight-name">🍱 Leftovers</div></div>`;
+    }
+  } else {
+    const recipe = recipes.find(r => r.id === weekPlan[today]);
+    if (recipe) {
+      html = `<div class="tonight-card">
+        <div class="tonight-label">Tonight's dinner · ${['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][dayOfWeek]}</div>
+        <div class="tonight-name">${recipe.name}</div>
+        <div class="tonight-meta">
+          ${recipe.prep_time ? `<span class="meta-item">⏱ ${recipe.prep_time} min</span>` : ''}
+          <span class="meta-item">👫 Serves 2</span>
+        </div>
+        ${renderIngredientDropdown(recipe)}
+        <button class="btn-cooked" onclick="markCooked('${today}')">✓ Cooked it</button>
+      </div>`;
+    } else {
+      html = `<div class="tonight-card"><div class="tonight-label">Tonight's dinner</div><div class="tonight-empty">No meal planned for today</div></div>`;
+    }
+  }
+  document.getElementById('tonight-view').innerHTML = html;
+}
+
+async function markCooked(day) {
+  const recipeId = weekPlan[day];
+  const recipe = recipes.find(r => r.id === recipeId);
+  if (!recipe) return;
+  recipe.last_cooked = new Date().toISOString().slice(0, 10);
+  if (dbAvailable) await sbPut('recipes', recipeId, { last_cooked: recipe.last_cooked });
+  saveToLocal();
+  renderWeek();
+  showToast(recipe.name + ' logged! 🍽');
 }
 
 function renderIngredientDropdown(recipe) {
@@ -1090,8 +1206,24 @@ function renderRecipeItem(r) {
         ? `<button class="btn-small" title="Restore" onclick="toggleArchive('${r.id}')">♻️</button>`
         : `<button class="btn-small" title="Archive" onclick="toggleArchive('${r.id}')">📦</button>`
       }
+      <button class="btn-clear" title="Delete permanently" onclick="deleteRecipe('${r.id}')">🗑</button>
     </div>
   </div>`;
+}
+
+async function deleteRecipe(id) {
+  const r = recipes.find(x => x.id === id);
+  if (!r) return;
+  if (!confirm('Permanently delete "' + r.name + '"? This cannot be undone.')) return;
+  recipes = recipes.filter(x => x.id !== id);
+  // Clear from week plan if assigned
+  Object.keys(weekPlan).forEach(day => { if (weekPlan[day] === id) weekPlan[day] = null; });
+  toddlerSlots = toddlerSlots.map(s => s === id ? null : s);
+  if (dbAvailable) await sbDelete('recipes', id);
+  saveToLocal();
+  await saveState();
+  renderAll();
+  showToast('Recipe deleted');
 }
 
 function renderAll() {
@@ -1661,6 +1793,112 @@ function editManualQty(key) {
 document.addEventListener('click', (e) => {
   if (!e.target.closest('.search-wrap')) {
     const dd = document.getElementById('shopDropdown');
+    if (dd) dd.classList.remove('open');
+  }
+});
+
+// ═══════════════════════════════════════
+// WHAT CAN I MAKE?
+// ═══════════════════════════════════════
+let wcimIngredients = [];
+
+function handleWcimSearch() {
+  const input = document.getElementById('wcimSearch');
+  const dropdown = document.getElementById('wcimDropdown');
+  const query = input.value.trim().toLowerCase();
+  if (!query) { dropdown.classList.remove('open'); return; }
+
+  // Build a list of all unique ingredient names from recipes
+  const allIngNames = new Set();
+  recipes.filter(r => !r.archived).forEach(r => {
+    (r.ingredients || []).forEach(ing => {
+      allIngNames.add(ing.name.split(',')[0].trim());
+    });
+  });
+  // Also include known items
+  knownItems.forEach(k => allIngNames.add(k.name));
+
+  const matches = [...allIngNames]
+    .filter(name => name.toLowerCase().includes(query) && !wcimIngredients.some(w => w.toLowerCase() === name.toLowerCase()))
+    .slice(0, 6);
+
+  let html = '';
+  matches.forEach(name => {
+    const esc = name.replace(/'/g, "\\'");
+    html += `<div class="dd-item" onclick="addWcimIngredient('${esc}')">
+      <span>${highlightMatch(name, query)}</span>
+    </div>`;
+  });
+
+  dropdown.innerHTML = html;
+  dropdown.classList.toggle('open', html.length > 0);
+}
+
+function addWcimIngredient(name) {
+  if (!wcimIngredients.some(w => w.toLowerCase() === name.toLowerCase())) {
+    wcimIngredients.push(name);
+  }
+  document.getElementById('wcimSearch').value = '';
+  document.getElementById('wcimDropdown').classList.remove('open');
+  renderWcim();
+}
+
+function removeWcimIngredient(index) {
+  wcimIngredients.splice(index, 1);
+  renderWcim();
+}
+
+function clearWcim() {
+  wcimIngredients = [];
+  renderWcim();
+}
+
+function renderWcim() {
+  // Render tags
+  let tagsHtml = '';
+  wcimIngredients.forEach((name, i) => {
+    tagsHtml += `<div class="wcim-tag selected" onclick="removeWcimIngredient(${i})">${name} <span class="wcim-remove">✕</span></div>`;
+  });
+  document.getElementById('wcimTags').innerHTML = tagsHtml;
+
+  // Find matching recipes
+  if (wcimIngredients.length === 0) {
+    document.getElementById('wcim-results').innerHTML = '<p style="color:var(--text-muted);font-size:13px;">Add ingredients above to see matching recipes.</p>';
+    return;
+  }
+
+  const wcimLower = wcimIngredients.map(w => w.toLowerCase());
+  const activeRecipes = recipes.filter(r => !r.archived && r.ingredients && r.ingredients.length > 0);
+
+  const scored = activeRecipes.map(r => {
+    const recipeIngs = (r.ingredients || []).map(ing => ing.name.split(',')[0].trim().toLowerCase());
+    const matched = recipeIngs.filter(ri => wcimLower.some(w => ri.includes(w) || w.includes(ri)));
+    const missing = recipeIngs.filter(ri => !wcimLower.some(w => ri.includes(w) || w.includes(ri)));
+    const score = recipeIngs.length > 0 ? matched.length / recipeIngs.length : 0;
+    return { recipe: r, matched, missing, score, matchCount: matched.length };
+  }).filter(s => s.matchCount > 0).sort((a, b) => b.score - a.score || b.matchCount - a.matchCount);
+
+  let html = '';
+  if (scored.length === 0) {
+    html = '<p style="color:var(--text-muted);font-size:13px;">No matching recipes found. Try adding more ingredients.</p>';
+  } else {
+    scored.forEach(s => {
+      const pct = Math.round(s.score * 100);
+      const isToddler = s.recipe.tags && s.recipe.tags.includes('toddler');
+      html += `<div class="wcim-result">
+        <div class="wcim-result-name">${isToddler ? '🧸 ' : ''}${s.recipe.name}</div>
+        <div class="wcim-match">${pct}% match · ${s.matchCount}/${s.matched.length + s.missing.length} ingredients</div>
+        ${s.missing.length > 0 ? `<div class="wcim-missing">Need: ${s.missing.join(', ')}</div>` : '<div class="wcim-match">You have everything! ✓</div>'}
+      </div>`;
+    });
+  }
+  document.getElementById('wcim-results').innerHTML = html;
+}
+
+// Close WCIM dropdown on outside click
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#tab-wcim .search-wrap')) {
+    const dd = document.getElementById('wcimDropdown');
     if (dd) dd.classList.remove('open');
   }
 });
