@@ -396,6 +396,18 @@ button { font-family:'DM Sans',sans-serif; }
 }
 .btn-delete:hover { background:#A93226; }
 
+/* ── Pick Recipe Modal ── */
+.pick-list { max-height:50vh; overflow-y:auto; }
+.pick-item {
+  display:flex; align-items:center; justify-content:space-between; padding:12px 14px;
+  border-bottom:1px solid var(--surface-alt); cursor:pointer; transition:background 0.15s;
+}
+.pick-item:hover { background:var(--surface-alt); }
+.pick-item:last-child { border-bottom:none; }
+.pick-item-name { font-family:'DM Serif Display',serif; font-size:15px; }
+.pick-item-meta { font-size:11px; color:var(--text-muted); }
+.pick-search { margin-bottom:12px; }
+
 /* ── Animations ── */
 @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
 .day-card, .sunday-card, .recipe-item, .toddler-card { animation:fadeIn 0.3s ease forwards; }
@@ -591,6 +603,18 @@ button { font-family:'DM Sans',sans-serif; }
 </div>
 
 </div>
+<!-- PICK RECIPE MODAL -->
+<div class="modal-overlay" id="pickModal">
+  <div class="modal">
+    <h2>Choose a Recipe</h2>
+    <input class="form-input pick-search" id="pickSearch" placeholder="Search recipes..." oninput="renderPickList()">
+    <div class="pick-list" id="pickList"></div>
+    <div style="margin-top:12px;">
+      <button class="btn-outline" onclick="closePickModal()" style="width:100%;text-align:center;">Cancel</button>
+    </div>
+  </div>
+</div>
+
 </div><!-- end app-wrap -->
 
 <div class="toast" id="toast"></div>
@@ -714,6 +738,8 @@ let currentFilter = 'all';
 let dbAvailable = false;
 let manualItems = [];
 let pendingNewItem = null;
+let swapHistory = {}; // tracks seen recipe IDs per day slot
+let pickingDay = null; // which day the pick modal is for
 
 // Default known items database — grows as you use the app
 const DEFAULT_KNOWN_ITEMS = [
@@ -896,6 +922,7 @@ function renderWeek() {
         </div>` : ''}
       </div>
       <div class="card-actions">
+        <button class="btn-small" title="Pick recipe" onclick="openPickModal('sunday')">📋</button>
         <button class="btn-small" onclick="swapMeal('sunday')">🔀</button>
         <button class="btn-small ${locks.sunday ? 'locked' : ''}" onclick="toggleLock('sunday')">${locks.sunday ? '🔒' : '🔓'}</button>
         ${sunRecipe ? `<button class="btn-clear" title="Clear meal" onclick="clearMeal('sunday')">✕</button>` : ''}
@@ -921,7 +948,8 @@ function renderWeek() {
         </div>
         <div class="card-actions">
           <button class="btn-small ${isLeftover ? 'locked' : ''}" title="${isLeftover ? 'Remove leftovers' : 'Mark as leftovers'}" onclick="toggleLeftover('${day}')" style="${isLeftover ? 'background:var(--green);border-color:var(--green);color:white;' : ''}">🍱</button>
-          ${!isLeftover ? `<button class="btn-small" onclick="swapMeal('${day}')">🔀</button>
+          ${!isLeftover ? `<button class="btn-small" title="Pick recipe" onclick="openPickModal('${day}')">📋</button>
+          <button class="btn-small" onclick="swapMeal('${day}')">🔀</button>
           <button class="btn-small ${locks[day] ? 'locked' : ''}" onclick="toggleLock('${day}')">${locks[day] ? '🔒' : '🔓'}</button>
           ${recipe ? `<button class="btn-clear" title="Clear meal" onclick="clearMeal('${day}')">✕</button>` : ''}` : ''}
         </div>
@@ -1263,6 +1291,7 @@ function generateWeek() {
   generateToddler();
   shopChecked = {};
   manualItems = [];
+  swapHistory = {};
   saveState();
   renderAll();
   showToast('Week generated! 🎲');
@@ -1291,6 +1320,7 @@ function pickRandom(pool, exclude) {
 
 function swapMeal(day) {
   const isToddler = typeof day === 'number';
+  const dayKey = isToddler ? 'toddler_' + day : day;
   const pool = isToddler
     ? recipes.filter(r => !r.archived && r.tags && r.tags.includes('toddler'))
     : day === 'sunday'
@@ -1299,9 +1329,26 @@ function swapMeal(day) {
 
   if (pool.length === 0) return showToast('No recipes available to swap');
 
+  // Init swap history for this slot if needed
+  if (!swapHistory[dayKey]) swapHistory[dayKey] = [];
+
   const currentId = isToddler ? toddlerSlots[day] : weekPlan[day];
-  const others = pool.filter(r => r.id !== currentId);
-  const pick = others.length > 0 ? others[Math.floor(Math.random() * others.length)] : pool[0];
+  if (currentId && !swapHistory[dayKey].includes(currentId)) {
+    swapHistory[dayKey].push(currentId);
+  }
+
+  // Filter out already-seen recipes
+  let unseen = pool.filter(r => !swapHistory[dayKey].includes(r.id));
+
+  // If we've seen everything, reset the history (but keep current excluded)
+  if (unseen.length === 0) {
+    swapHistory[dayKey] = currentId ? [currentId] : [];
+    unseen = pool.filter(r => r.id !== currentId);
+    if (unseen.length === 0) unseen = pool;
+    showToast('Cycled through all recipes — starting fresh');
+  }
+
+  const pick = unseen[Math.floor(Math.random() * unseen.length)];
 
   if (isToddler) {
     toddlerSlots[day] = pick.id;
@@ -1311,6 +1358,79 @@ function swapMeal(day) {
   saveState();
   renderWeek();
   if (document.querySelector('.tab.active').dataset.tab === 'shopping') renderShopList();
+}
+
+// ═══════════════════════════════════════
+// PICK RECIPE MANUALLY
+// ═══════════════════════════════════════
+function openPickModal(day) {
+  pickingDay = day;
+  document.getElementById('pickSearch').value = '';
+  renderPickList();
+  document.getElementById('pickModal').classList.add('open');
+}
+
+function closePickModal() {
+  document.getElementById('pickModal').classList.remove('open');
+  pickingDay = null;
+}
+
+function renderPickList() {
+  const query = (document.getElementById('pickSearch').value || '').trim().toLowerCase();
+  const isToddler = typeof pickingDay === 'number';
+  const isSunday = pickingDay === 'sunday';
+
+  let pool;
+  if (isToddler) {
+    pool = recipes.filter(r => !r.archived && r.tags && r.tags.includes('toddler'));
+  } else if (isSunday) {
+    pool = recipes.filter(r => !r.archived && r.tags && r.tags.includes('slow_cooker'));
+  } else {
+    pool = recipes.filter(r => !r.archived && !(r.tags && r.tags.includes('toddler')));
+  }
+
+  if (query) {
+    pool = pool.filter(r => r.name.toLowerCase().includes(query));
+  }
+
+  // Sort newest first
+  pool.sort((a, b) => {
+    const aDate = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const bDate = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return bDate - aDate;
+  });
+
+  let html = '';
+  if (pool.length === 0) {
+    html = '<p style="color:var(--text-muted);font-size:13px;padding:12px;">No matching recipes.</p>';
+  } else {
+    pool.forEach(r => {
+      const tagLabels = { quick: '⚡', slow_cooker: '🍲', batch: '🔁', freezer: '❄️', finger_food: '🤌' };
+      const tags = (r.tags || []).map(t => tagLabels[t] || '').filter(Boolean).join(' ');
+      html += `<div class="pick-item" onclick="pickRecipe('${r.id}')">
+        <div>
+          <div class="pick-item-name">${r.name}</div>
+          <div class="pick-item-meta">${tags} ${r.prep_time ? '⏱ ' + r.prep_time + ' min' : ''} ${r.last_cooked ? '📅 ' + formatDate(r.last_cooked) : ''}</div>
+        </div>
+        ${r.is_favourite ? '<span style="color:#E8B931;font-size:16px;">★</span>' : ''}
+      </div>`;
+    });
+  }
+  document.getElementById('pickList').innerHTML = html;
+}
+
+function pickRecipe(recipeId) {
+  if (typeof pickingDay === 'number') {
+    toddlerSlots[pickingDay] = recipeId;
+  } else {
+    weekPlan[pickingDay] = recipeId;
+  }
+  closePickModal();
+  saveState();
+  renderWeek();
+  if (document.querySelector('.tab.active').dataset.tab === 'shopping') renderShopList();
+  const r = recipes.find(x => x.id === recipeId);
+  showToast((r ? r.name : 'Recipe') + ' selected');
 }
 
 function swapToddler(index) { swapMeal(index); }
