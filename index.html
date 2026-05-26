@@ -398,6 +398,29 @@ button { font-family:'DM Sans',sans-serif; }
 
 /* ── Pick Recipe Modal ── */
 .pick-list { max-height:50vh; overflow-y:auto; }
+
+/* ── Merge Mode ── */
+.shop-item.merge-mode { cursor:pointer; }
+.shop-item.merge-mode:hover { background:var(--accent-light); }
+.shop-item.merge-selected { background:var(--accent-light); border:1px solid var(--accent); border-radius:var(--radius-sm); }
+.merge-confirm-box {
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:16px; margin-bottom:16px; box-shadow:var(--shadow-md);
+}
+.merge-confirm-box h3 { font-family:'DM Serif Display',serif; font-size:16px; margin-bottom:10px; }
+.merge-name-option {
+  padding:6px 12px; border:1px solid var(--border); border-radius:var(--radius-sm);
+  cursor:pointer; font-size:13px; margin-bottom:4px; transition:all 0.15s;
+}
+.merge-name-option:hover, .merge-name-option.selected { background:var(--accent-light); border-color:var(--accent); color:var(--accent); }
+.merge-unit-row { display:flex; gap:8px; align-items:center; margin-top:10px; }
+.merge-unit-row select {
+  padding:8px 10px; border:1px solid var(--border); border-radius:var(--radius-sm);
+  font-family:'DM Sans',sans-serif; font-size:13px; flex:1;
+}
+.merge-remember { display:flex; align-items:center; gap:8px; margin-top:10px; font-size:12px; color:var(--text-muted); }
+.merge-remember input { width:16px; height:16px; }
+
 .pick-item {
   display:flex; align-items:center; justify-content:space-between; padding:12px 14px;
   border-bottom:1px solid var(--surface-alt); cursor:pointer; transition:background 0.15s;
@@ -496,10 +519,16 @@ button { font-family:'DM Sans',sans-serif; }
     <div class="generate-bar">
       <div class="section-title">Shopping List</div>
       <div style="display:flex;gap:6px;">
+        <button class="btn-outline" id="mergeToggle" onclick="toggleMergeMode()">🔗 Merge</button>
         <button class="btn-outline" onclick="clearCheckedShop()">Clear Checked</button>
         <button class="btn-outline" onclick="copyShopList()">📋 Copy</button>
       </div>
     </div>
+    <div id="merge-bar" style="display:none; background:var(--accent-light); border:1px solid var(--accent); border-radius:var(--radius); padding:12px 14px; margin-bottom:12px;">
+      <div style="font-size:12px; font-weight:600; color:var(--accent); margin-bottom:8px;">MERGE MODE — tap two items to combine</div>
+      <div id="merge-selection" style="font-size:13px; color:var(--text-muted);"></div>
+    </div>
+    <div id="merge-confirm" style="display:none;"></div>
     <div class="search-wrap">
       <span class="search-icon">🔍</span>
       <input class="search-input" id="shopSearch" type="text" placeholder="Add item..." autocomplete="off" oninput="handleShopSearch()" onfocus="handleShopSearch()">
@@ -740,6 +769,7 @@ let manualItems = [];
 let pendingNewItem = null;
 let swapHistory = {}; // tracks seen recipe IDs per day slot
 let pickingDay = null; // which day the pick modal is for
+let customSynonyms = {}; // user-defined merge rules
 
 // Default known items database — grows as you use the app
 const DEFAULT_KNOWN_ITEMS = [
@@ -844,6 +874,7 @@ async function loadFromDB() {
     shopChecked = s.shopChecked || {};
     manualItems = s.manualItems || [];
     if (s.knownItems && s.knownItems.length > 0) knownItems = s.knownItems;
+    customSynonyms = s.customSynonyms || {};
   }
   // Also save to localStorage as backup
   saveToLocal();
@@ -863,20 +894,21 @@ function loadFromLocal() {
       shopChecked = d.shopChecked || {};
       manualItems = d.manualItems || [];
       if (d.knownItems && d.knownItems.length > 0) knownItems = d.knownItems;
+      customSynonyms = d.customSynonyms || {};
     }
   } catch (e) { console.error('loadLocal', e); }
 }
 
 function saveToLocal() {
   localStorage.setItem('mealPlannerData', JSON.stringify({
-    recipes, weekPlan, locks, leftovers, toddlerSlots, toddlerInShopList, staples, shopChecked, manualItems, knownItems
+    recipes, weekPlan, locks, leftovers, toddlerSlots, toddlerInShopList, staples, shopChecked, manualItems, knownItems, customSynonyms
   }));
 }
 
 async function saveState() {
   saveToLocal();
   if (!dbAvailable) return;
-  const stateData = { weekPlan, locks, leftovers, toddlerSlots, toddlerInShopList, staples, shopChecked, manualItems, knownItems };
+  const stateData = { weekPlan, locks, leftovers, toddlerSlots, toddlerInShopList, staples, shopChecked, manualItems, knownItems, customSynonyms };
   // Upsert app_state
   const existing = await sbGet('app_state', 'select=id&key=eq.main&limit=1');
   if (existing && existing.length > 0) {
@@ -1131,7 +1163,9 @@ function renderShopList() {
 
   function mergeKey(name) {
     let k = shopName(name).toLowerCase().trim();
-    // Check synonyms first
+    // Check custom synonyms first (user-defined merges)
+    if (customSynonyms[k]) return customSynonyms[k];
+    // Check built-in synonyms
     if (MERGE_SYNONYMS[k]) return MERGE_SYNONYMS[k];
     // Remove trailing 's' for simple plural matching (but not 'ss')
     if (k.endsWith('s') && !k.endsWith('ss') && k.length > 3) {
@@ -1193,10 +1227,16 @@ function renderShopList() {
       const isChecked = shopChecked[key];
       const sources = item.sources ? [...item.sources].join(', ') : '';
       const isManual = item.manual;
-      html += `<div class="shop-item ${isChecked ? 'checked-off' : ''}" onclick="toggleShopItem('${key.replace(/'/g, "\\'")}')">
-        <div class="check ${isChecked ? 'checked' : ''}"></div>
+      const mergeClass = mergeMode ? 'merge-mode' : '';
+      const mergeSelClass = mergeSelections.includes(key) ? 'merge-selected' : '';
+      const clickAction = mergeMode
+        ? `selectForMerge('${key.replace(/'/g, "\\'")}', '${item.name.replace(/'/g, "\\'")}', '${item.qty}', '${(item.unit||'').replace(/'/g, "\\'")}', '${item.aisle}')`
+        : `toggleShopItem('${key.replace(/'/g, "\\'")}')`;
+      html += `<div class="shop-item ${isChecked ? 'checked-off' : ''} ${mergeClass} ${mergeSelClass}" onclick="${clickAction}">
+        <div class="check ${isChecked ? 'checked' : ''}" ${mergeMode ? 'style="display:none"' : ''}></div>
+        ${mergeMode ? '<span style="font-size:16px;margin-right:4px;">🔗</span>' : ''}
         <span class="shop-item-name">${item.name}${isManual ? ' <span class="manual-badge">added</span>' : ''}</span>
-        <span class="shop-item-qty ${isManual ? 'editable' : ''}" ${isManual ? `onclick="event.stopPropagation();editManualQty('${key.replace(/'/g, "\\'")}')"` : ''}>${item.qty}${item.unit && !item.qty.includes(item.unit) ? ' ' + item.unit : ''}</span>
+        <span class="shop-item-qty ${isManual ? 'editable' : ''}" ${isManual && !mergeMode ? `onclick="event.stopPropagation();editManualQty('${key.replace(/'/g, "\\'")}')"` : ''}>${item.qty}${item.unit && !item.qty.includes(item.unit) ? ' ' + item.unit : ''}</span>
         <span class="shop-item-source">${!isManual ? (sources.length > 20 ? 'Multiple' : sources) : ''}</span>
       </div>`;
     });
@@ -1841,7 +1881,7 @@ function removeStaple(index) {
 // EXPORT / IMPORT
 // ═══════════════════════════════════════
 function exportData() {
-  const data = { recipes, weekPlan, locks, leftovers, toddlerSlots, toddlerInShopList, staples, shopChecked, manualItems, knownItems, exportDate: new Date().toISOString() };
+  const data = { recipes, weekPlan, locks, leftovers, toddlerSlots, toddlerInShopList, staples, shopChecked, manualItems, knownItems, customSynonyms, exportDate: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1869,6 +1909,7 @@ async function importData(event) {
       shopChecked = data.shopChecked || {};
       manualItems = data.manualItems || [];
       if (data.knownItems && data.knownItems.length > 0) knownItems = data.knownItems;
+      customSynonyms = data.customSynonyms || {};
 
       // Sync to DB if available
       if (dbAvailable) {
@@ -1893,6 +1934,119 @@ async function importData(event) {
     showToast('Import failed: ' + e.message);
   }
   event.target.value = '';
+}
+
+// ═══════════════════════════════════════
+// SHOPPING LIST: MERGE MODE
+// ═══════════════════════════════════════
+let mergeMode = false;
+let mergeSelections = [];
+let mergeItemData = [];
+
+function toggleMergeMode() {
+  mergeMode = !mergeMode;
+  mergeSelections = [];
+  mergeItemData = [];
+  const btn = document.getElementById('mergeToggle');
+  const bar = document.getElementById('merge-bar');
+  btn.style.background = mergeMode ? 'var(--accent)' : '';
+  btn.style.color = mergeMode ? 'white' : '';
+  btn.style.borderColor = mergeMode ? 'var(--accent)' : '';
+  bar.style.display = mergeMode ? 'block' : 'none';
+  document.getElementById('merge-selection').textContent = 'Tap the first item...';
+  document.getElementById('merge-confirm').style.display = 'none';
+  document.getElementById('merge-confirm').innerHTML = '';
+  renderShopList();
+}
+
+function selectForMerge(key, name, qty, unit, aisle) {
+  if (mergeSelections.includes(key)) {
+    mergeSelections = mergeSelections.filter(k => k !== key);
+    mergeItemData = mergeItemData.filter(d => d.key !== key);
+  } else if (mergeSelections.length < 2) {
+    mergeSelections.push(key);
+    mergeItemData.push({ key, name, qty, unit, aisle });
+  }
+
+  const selEl = document.getElementById('merge-selection');
+  if (mergeSelections.length === 0) {
+    selEl.textContent = 'Tap the first item...';
+    document.getElementById('merge-confirm').style.display = 'none';
+  } else if (mergeSelections.length === 1) {
+    selEl.innerHTML = `<strong>${mergeItemData[0].name}</strong> selected — now tap the second item`;
+    document.getElementById('merge-confirm').style.display = 'none';
+  } else {
+    selEl.innerHTML = `<strong>${mergeItemData[0].name}</strong> + <strong>${mergeItemData[1].name}</strong>`;
+    showMergeConfirm();
+  }
+  renderShopList();
+}
+
+function showMergeConfirm() {
+  const a = mergeItemData[0];
+  const b = mergeItemData[1];
+  const units = [...new Set([a.unit, b.unit, 'g', 'kg', 'ml', 'l', 'tbsp', 'tsp', 'tin', '', 'pack', 'jar'].filter(Boolean))];
+
+  let html = `<div class="merge-confirm-box">
+    <h3>Merge these items</h3>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Keep which name?</div>
+    <div class="merge-name-option selected" onclick="selectMergeName(this, 0)">${a.name}</div>
+    <div class="merge-name-option" onclick="selectMergeName(this, 1)">${b.name}</div>
+    <div class="merge-unit-row">
+      <span style="font-size:12px;color:var(--text-muted);">Unit:</span>
+      <select id="mergeUnit">
+        <option value="">(none)</option>
+        ${units.map(u => `<option value="${u}" ${u === a.unit ? 'selected' : ''}>${u}</option>`).join('')}
+      </select>
+    </div>
+    <div class="merge-remember">
+      <input type="checkbox" id="mergeRemember" checked>
+      <label for="mergeRemember">Remember this merge for next time</label>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      <button class="btn-primary" onclick="confirmMerge()" style="flex:1;">Merge</button>
+      <button class="btn-outline" onclick="cancelMerge()">Cancel</button>
+    </div>
+  </div>`;
+  document.getElementById('merge-confirm').innerHTML = html;
+  document.getElementById('merge-confirm').style.display = 'block';
+}
+
+let selectedMergeNameIdx = 0;
+function selectMergeName(el, idx) {
+  selectedMergeNameIdx = idx;
+  document.querySelectorAll('.merge-name-option').forEach(o => o.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function confirmMerge() {
+  const keepName = mergeItemData[selectedMergeNameIdx].name;
+  const otherName = mergeItemData[selectedMergeNameIdx === 0 ? 1 : 0].name;
+  const remember = document.getElementById('mergeRemember').checked;
+
+  if (remember) {
+    // Add to synonyms — store in knownItems as merge rules
+    MERGE_SYNONYMS[otherName.toLowerCase()] = keepName.toLowerCase();
+    MERGE_SYNONYMS[keepName.toLowerCase()] = keepName.toLowerCase();
+    // Also save to state so it persists
+    if (!customSynonyms) customSynonyms = {};
+    customSynonyms[otherName.toLowerCase()] = keepName.toLowerCase();
+    customSynonyms[keepName.toLowerCase()] = keepName.toLowerCase();
+    saveState();
+  }
+
+  toggleMergeMode();
+  renderShopList();
+  showToast('Merged! ' + keepName);
+}
+
+function cancelMerge() {
+  mergeSelections = [];
+  mergeItemData = [];
+  document.getElementById('merge-selection').textContent = 'Tap the first item...';
+  document.getElementById('merge-confirm').style.display = 'none';
+  document.getElementById('merge-confirm').innerHTML = '';
+  renderShopList();
 }
 
 // ═══════════════════════════════════════
