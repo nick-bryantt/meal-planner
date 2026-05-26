@@ -183,6 +183,55 @@ button { font-family:'DM Sans',sans-serif; }
 .toggle.on::after { transform:translateX(18px); }
 
 /* ── Shopping List ── */
+.search-wrap { position:relative; margin-bottom:16px; }
+.search-input {
+  width:100%; padding:12px 16px 12px 40px; border:1px solid var(--border); border-radius:var(--radius);
+  font-family:'DM Sans',sans-serif; font-size:14px; background:var(--surface); color:var(--text);
+  transition:all 0.2s; box-shadow:var(--shadow-sm);
+}
+.search-input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(212,113,59,0.1); }
+.search-input::placeholder { color:var(--text-light); }
+.search-icon { position:absolute; left:14px; top:50%; transform:translateY(-50%); font-size:15px; color:var(--text-light); pointer-events:none; }
+.search-dropdown {
+  position:absolute; top:calc(100% + 4px); left:0; right:0; background:var(--surface);
+  border:1px solid var(--border); border-radius:var(--radius); box-shadow:0 8px 24px rgba(44,37,32,0.12);
+  z-index:50; max-height:260px; overflow-y:auto; display:none;
+}
+.search-dropdown.open { display:block; }
+.dd-item {
+  display:flex; align-items:center; gap:10px; padding:11px 16px; cursor:pointer;
+  transition:background 0.15s; font-size:14px; border-bottom:1px solid rgba(0,0,0,0.03);
+}
+.dd-item:last-child { border-bottom:none; }
+.dd-item:hover { background:var(--surface-alt); }
+.dd-item .dd-aisle {
+  font-size:10px; font-weight:600; padding:2px 7px; border-radius:10px;
+  background:var(--surface-alt); color:var(--text-muted); margin-left:auto; white-space:nowrap;
+}
+.dd-item.add-new { color:var(--accent); font-weight:600; border-top:1px solid var(--border); }
+.dd-item.add-new .plus-icon {
+  width:22px; height:22px; background:var(--accent-light); border-radius:50%;
+  display:flex; align-items:center; justify-content:center; font-size:14px; color:var(--accent); flex-shrink:0;
+}
+.aisle-picker {
+  display:none; padding:10px 16px; border-top:1px solid var(--border); background:var(--surface-alt);
+  border-radius:0 0 var(--radius) var(--radius);
+}
+.aisle-picker.open { display:block; }
+.aisle-picker-label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; color:var(--text-muted); margin-bottom:8px; }
+.aisle-buttons { display:flex; gap:6px; flex-wrap:wrap; }
+.aisle-btn {
+  padding:6px 12px; border:1px solid var(--border); border-radius:20px; background:var(--surface);
+  font-family:'DM Sans',sans-serif; font-size:12px; cursor:pointer; transition:all 0.2s;
+}
+.aisle-btn:hover { border-color:var(--accent); background:var(--accent-light); color:var(--accent); }
+.manual-badge {
+  font-size:9px; font-weight:700; padding:1px 5px; border-radius:8px;
+  background:var(--accent-light); color:var(--accent); margin-left:4px;
+}
+.shop-item-qty.editable { cursor:pointer; padding:2px 6px; border-radius:4px; }
+.shop-item-qty.editable:hover { background:var(--accent-light); }
+
 .aisle-group { margin-bottom:14px; }
 .aisle-title {
   font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.6px; color:var(--text-muted);
@@ -387,6 +436,11 @@ button { font-family:'DM Sans',sans-serif; }
         <button class="btn-outline" onclick="copyShopList()">📋 Copy</button>
       </div>
     </div>
+    <div class="search-wrap">
+      <span class="search-icon">🔍</span>
+      <input class="search-input" id="shopSearch" type="text" placeholder="Add item..." autocomplete="off" oninput="handleShopSearch()" onfocus="handleShopSearch()">
+      <div class="search-dropdown" id="shopDropdown"></div>
+    </div>
     <div id="shop-view"><div class="loading">Loading</div></div>
   </div>
 
@@ -573,6 +627,38 @@ let shopChecked = {};
 let editingRecipeId = null;
 let currentFilter = 'all';
 let dbAvailable = false;
+let manualItems = [];
+let pendingNewItem = null;
+
+// Default known items database — grows as you use the app
+const DEFAULT_KNOWN_ITEMS = [
+  {name:'Milk',aisle:'Dairy'},{name:'Eggs (free range)',aisle:'Dairy'},{name:'Butter',aisle:'Dairy'},
+  {name:'Cheddar',aisle:'Dairy'},{name:'Soured cream',aisle:'Dairy'},{name:'Double cream',aisle:'Dairy'},
+  {name:'Yoghurt',aisle:'Dairy'},{name:'Oat milk',aisle:'Dairy'},
+  {name:'Chicken breast',aisle:'Meat & Fish'},{name:'Beef mince',aisle:'Meat & Fish'},
+  {name:'Pork sausages',aisle:'Meat & Fish'},{name:'Bacon rashers',aisle:'Meat & Fish'},
+  {name:'Salmon fillets',aisle:'Meat & Fish'},{name:'Lamb mince',aisle:'Meat & Fish'},
+  {name:'Onions',aisle:'Fruit & Veg'},{name:'Carrots',aisle:'Fruit & Veg'},
+  {name:'Potatoes',aisle:'Fruit & Veg'},{name:'Bananas',aisle:'Fruit & Veg'},
+  {name:'Tomatoes',aisle:'Fruit & Veg'},{name:'Broccoli',aisle:'Fruit & Veg'},
+  {name:'Avocados',aisle:'Fruit & Veg'},{name:'Mushrooms',aisle:'Fruit & Veg'},
+  {name:'Garlic',aisle:'Fruit & Veg'},{name:'Lemons',aisle:'Fruit & Veg'},
+  {name:'Cucumber',aisle:'Fruit & Veg'},{name:'Peppers',aisle:'Fruit & Veg'},
+  {name:'Apples',aisle:'Fruit & Veg'},{name:'Grapes',aisle:'Fruit & Veg'},
+  {name:'Sweet potatoes',aisle:'Fruit & Veg'},{name:'Courgettes',aisle:'Fruit & Veg'},
+  {name:'Bread (white)',aisle:'Bakery'},{name:'Bread (wholemeal)',aisle:'Bakery'},
+  {name:'Wraps',aisle:'Bakery'},{name:'Crumpets',aisle:'Bakery'},{name:'Bagels',aisle:'Bakery'},
+  {name:'Tin chopped tomatoes',aisle:'Cupboard Staples'},{name:'Pasta',aisle:'Cupboard Staples'},
+  {name:'Rice',aisle:'Cupboard Staples'},{name:'Baked beans',aisle:'Cupboard Staples'},
+  {name:'Cereal',aisle:'Cupboard Staples'},{name:'Peanut butter',aisle:'Cupboard Staples'},
+  {name:'Crisps',aisle:'Cupboard Staples'},{name:'Squash (drink)',aisle:'Cupboard Staples'},
+  {name:'Nappies',aisle:'Other'},{name:'Wipes',aisle:'Other'},{name:'Kitchen roll',aisle:'Other'},
+  {name:'Bin bags',aisle:'Other'},{name:'Washing up liquid',aisle:'Other'},
+  {name:'Frozen peas',aisle:'Frozen'},{name:'Fish fingers',aisle:'Frozen'},
+  {name:'Ice cream',aisle:'Frozen'},{name:'Frozen chips',aisle:'Frozen'},
+  {name:'Frozen mixed veg',aisle:'Frozen'}
+];
+let knownItems = [...DEFAULT_KNOWN_ITEMS];
 
 // ═══════════════════════════════════════
 // SUPABASE HELPERS
@@ -641,6 +727,8 @@ async function loadFromDB() {
     toddlerInShopList = s.toddlerInShopList !== undefined ? s.toddlerInShopList : true;
     staples = s.staples || [];
     shopChecked = s.shopChecked || {};
+    manualItems = s.manualItems || [];
+    if (s.knownItems && s.knownItems.length > 0) knownItems = s.knownItems;
   }
   // Also save to localStorage as backup
   saveToLocal();
@@ -658,20 +746,22 @@ function loadFromLocal() {
       toddlerInShopList = d.toddlerInShopList !== undefined ? d.toddlerInShopList : true;
       staples = d.staples || [];
       shopChecked = d.shopChecked || {};
+      manualItems = d.manualItems || [];
+      if (d.knownItems && d.knownItems.length > 0) knownItems = d.knownItems;
     }
   } catch (e) { console.error('loadLocal', e); }
 }
 
 function saveToLocal() {
   localStorage.setItem('mealPlannerData', JSON.stringify({
-    recipes, weekPlan, locks, leftovers, toddlerSlots, toddlerInShopList, staples, shopChecked
+    recipes, weekPlan, locks, leftovers, toddlerSlots, toddlerInShopList, staples, shopChecked, manualItems, knownItems
   }));
 }
 
 async function saveState() {
   saveToLocal();
   if (!dbAvailable) return;
-  const stateData = { weekPlan, locks, leftovers, toddlerSlots, toddlerInShopList, staples, shopChecked };
+  const stateData = { weekPlan, locks, leftovers, toddlerSlots, toddlerInShopList, staples, shopChecked, manualItems, knownItems };
   // Upsert app_state
   const existing = await sbGet('app_state', 'select=id&key=eq.main&limit=1');
   if (existing && existing.length > 0) {
@@ -862,11 +952,18 @@ function renderShopList() {
   // Sort into aisles
   Object.values(combined).forEach(item => {
     const aisleName = aisles[item.aisle] ? item.aisle : 'Other';
-    aisles[aisleName].items.push(item);
+    aisles[aisleName].items.push({ ...item, manual: false });
   });
 
-  let totalItems = Object.values(combined).length;
-  let html = `<div class="shop-stats"><strong>${totalItems}</strong> items from <strong>${days.filter(d => !leftovers[d] && weekPlan[d]).length + toddlerSlots.filter(Boolean).length}</strong> meals</div>`;
+  // Add manual items
+  manualItems.forEach(item => {
+    const aisleName = aisles[item.aisle] ? item.aisle : 'Other';
+    aisles[aisleName].items.push({ name: item.name, qty: item.qty || '1', unit: item.unit || '', sources: new Set(), aisle: item.aisle, manual: true });
+  });
+
+  let totalItems = Object.values(combined).length + manualItems.length;
+  const manualCount = manualItems.length;
+  let html = `<div class="shop-stats"><strong>${totalItems}</strong> items from <strong>${days.filter(d => !leftovers[d] && weekPlan[d]).length + toddlerSlots.filter(Boolean).length}</strong> meals${manualCount > 0 ? ` · <strong>${manualCount}</strong> added` : ''}</div>`;
 
   if (totalItems === 0) {
     html += '<p style="color:var(--text-muted);font-size:13px;">Generate a week\'s meals to see your shopping list here.</p>';
@@ -878,12 +975,13 @@ function renderShopList() {
     aisle.items.forEach(item => {
       const key = item.name.toLowerCase().trim();
       const isChecked = shopChecked[key];
-      const sources = [...item.sources].join(', ');
+      const sources = item.sources ? [...item.sources].join(', ') : '';
+      const isManual = item.manual;
       html += `<div class="shop-item ${isChecked ? 'checked-off' : ''}" onclick="toggleShopItem('${key.replace(/'/g, "\\'")}')">
         <div class="check ${isChecked ? 'checked' : ''}"></div>
-        <span class="shop-item-name">${item.name}</span>
-        <span class="shop-item-qty">${item.qty}${item.unit && !item.qty.includes(item.unit) ? ' ' + item.unit : ''}</span>
-        <span class="shop-item-source">${sources.length > 20 ? 'Multiple' : sources}</span>
+        <span class="shop-item-name">${item.name}${isManual ? ' <span class="manual-badge">added</span>' : ''}</span>
+        <span class="shop-item-qty ${isManual ? 'editable' : ''}" ${isManual ? `onclick="event.stopPropagation();editManualQty('${key.replace(/'/g, "\\'")}')"` : ''}>${item.qty}${item.unit && !item.qty.includes(item.unit) ? ' ' + item.unit : ''}</span>
+        <span class="shop-item-source">${!isManual ? (sources.length > 20 ? 'Multiple' : sources) : ''}</span>
       </div>`;
     });
     html += '</div>';
@@ -977,6 +1075,7 @@ function generateWeek() {
 
   generateToddler();
   shopChecked = {};
+  manualItems = [];
   saveState();
   renderAll();
   showToast('Week generated! 🎲');
@@ -1283,7 +1382,7 @@ function removeStaple(index) {
 // EXPORT / IMPORT
 // ═══════════════════════════════════════
 function exportData() {
-  const data = { recipes, weekPlan, locks, leftovers, toddlerSlots, toddlerInShopList, staples, shopChecked, exportDate: new Date().toISOString() };
+  const data = { recipes, weekPlan, locks, leftovers, toddlerSlots, toddlerInShopList, staples, shopChecked, manualItems, knownItems, exportDate: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1309,6 +1408,8 @@ async function importData(event) {
       toddlerInShopList = data.toddlerInShopList !== undefined ? data.toddlerInShopList : true;
       staples = data.staples || staples;
       shopChecked = data.shopChecked || {};
+      manualItems = data.manualItems || [];
+      if (data.knownItems && data.knownItems.length > 0) knownItems = data.knownItems;
 
       // Sync to DB if available
       if (dbAvailable) {
@@ -1334,6 +1435,101 @@ async function importData(event) {
   }
   event.target.value = '';
 }
+
+// ═══════════════════════════════════════
+// SHOPPING LIST: SEARCH & MANUAL ITEMS
+// ═══════════════════════════════════════
+const AISLE_EMOJIS = {'Meat & Fish':'🥩','Fruit & Veg':'🥕','Dairy':'🧀','Cupboard Staples':'🥫','Frozen':'❄️','Herbs & Spices':'🌿','Bakery':'🍞','Other':'🛒'};
+
+function handleShopSearch() {
+  const input = document.getElementById('shopSearch');
+  const dropdown = document.getElementById('shopDropdown');
+  const query = input.value.trim().toLowerCase();
+  if (!query) { dropdown.classList.remove('open'); return; }
+
+  const matches = knownItems.filter(item => item.name.toLowerCase().includes(query)).slice(0, 5);
+  let html = '';
+  matches.forEach(item => {
+    const esc = item.name.replace(/'/g, "\\'");
+    html += `<div class="dd-item" onclick="addManualItem('${esc}','${item.aisle}')">
+      <span>${highlightMatch(item.name, query)}</span>
+      <span class="dd-aisle">${AISLE_EMOJIS[item.aisle]||'🛒'} ${item.aisle}</span>
+    </div>`;
+  });
+
+  const exactMatch = knownItems.some(item => item.name.toLowerCase() === query);
+  if (!exactMatch && query.length > 1) {
+    const cap = input.value.trim().charAt(0).toUpperCase() + input.value.trim().slice(1);
+    const esc = cap.replace(/'/g, "\\'");
+    html += `<div class="dd-item add-new" onclick="showAislePicker('${esc}')">
+      <span class="plus-icon">+</span>
+      <span>Add "${cap}"</span>
+    </div>`;
+    html += `<div class="aisle-picker" id="aislePicker">
+      <div class="aisle-picker-label">Which aisle?</div>
+      <div class="aisle-buttons">
+        ${Object.entries(AISLE_EMOJIS).map(([a,e]) => `<button class="aisle-btn" onclick="event.stopPropagation();addNewKnownItem('${a}')">${e} ${a.split(' ')[0]}</button>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  dropdown.innerHTML = html;
+  dropdown.classList.toggle('open', html.length > 0);
+}
+
+function highlightMatch(text, query) {
+  const idx = text.toLowerCase().indexOf(query);
+  if (idx === -1) return text;
+  return text.slice(0, idx) + '<strong style="color:var(--accent)">' + text.slice(idx, idx + query.length) + '</strong>' + text.slice(idx + query.length);
+}
+
+function addManualItem(name, aisle) {
+  // Check if already in manual list
+  if (manualItems.some(m => m.name.toLowerCase() === name.toLowerCase())) {
+    showToast(name + ' already on list');
+  } else {
+    manualItems.push({ name, aisle, qty: '1', unit: '' });
+    saveState();
+    showToast(name + ' added');
+  }
+  document.getElementById('shopSearch').value = '';
+  document.getElementById('shopDropdown').classList.remove('open');
+  renderShopList();
+}
+
+function showAislePicker(name) {
+  pendingNewItem = name;
+  const picker = document.getElementById('aislePicker');
+  if (picker) picker.classList.add('open');
+}
+
+function addNewKnownItem(aisle) {
+  if (!pendingNewItem) return;
+  // Add to known items database
+  knownItems.push({ name: pendingNewItem, aisle });
+  // Add to shopping list
+  addManualItem(pendingNewItem, aisle);
+  pendingNewItem = null;
+}
+
+function editManualQty(key) {
+  const item = manualItems.find(m => m.name.toLowerCase().trim() === key);
+  if (!item) return;
+  const newQty = prompt('Quantity:', item.qty);
+  if (newQty !== null && newQty.trim()) {
+    item.qty = newQty.trim();
+    saveState();
+    renderShopList();
+  }
+}
+
+// Close search dropdown on outside click
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.search-wrap')) {
+    const dd = document.getElementById('shopDropdown');
+    if (dd) dd.classList.remove('open');
+  }
+});
 
 // ═══════════════════════════════════════
 // HELPERS
