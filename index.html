@@ -763,8 +763,12 @@ const DEFAULT_KNOWN_ITEMS = [
   {name:'Rice',aisle:'Cupboard Staples'},{name:'Baked beans',aisle:'Cupboard Staples'},
   {name:'Cereal',aisle:'Cupboard Staples'},{name:'Peanut butter',aisle:'Cupboard Staples'},
   {name:'Crisps',aisle:'Cupboard Staples'},{name:'Squash (drink)',aisle:'Cupboard Staples'},
-  {name:'Nappies',aisle:'Other'},{name:'Wipes',aisle:'Other'},{name:'Kitchen roll',aisle:'Other'},
-  {name:'Bin bags',aisle:'Other'},{name:'Washing up liquid',aisle:'Other'},
+  {name:'Nappies',aisle:'Household'},{name:'Wipes',aisle:'Household'},{name:'Kitchen roll',aisle:'Household'},
+  {name:'Bin bags',aisle:'Household'},{name:'Washing up liquid',aisle:'Household'},
+  {name:'Toilet roll',aisle:'Household'},{name:'Toothpaste',aisle:'Household'},{name:'Shampoo',aisle:'Household'},
+  {name:'Laundry detergent',aisle:'Household'},{name:'Hand soap',aisle:'Household'},
+  {name:'Pesto',aisle:'Fridge'},{name:'Hummus',aisle:'Fridge'},{name:'Coleslaw',aisle:'Fridge'},
+  {name:'Orange juice',aisle:'Fridge'},{name:'Dips',aisle:'Fridge'},
   {name:'Frozen peas',aisle:'Frozen'},{name:'Fish fingers',aisle:'Frozen'},
   {name:'Ice cream',aisle:'Frozen'},{name:'Frozen chips',aisle:'Frozen'},
   {name:'Frozen mixed veg',aisle:'Frozen'}
@@ -1058,10 +1062,12 @@ function renderShopList() {
     'Meat & Fish': { icon: '🥩', items: [] },
     'Fruit & Veg': { icon: '🥕', items: [] },
     'Dairy': { icon: '🧀', items: [] },
+    'Fridge': { icon: '🧊', items: [] },
     'Cupboard Staples': { icon: '🥫', items: [] },
     'Frozen': { icon: '❄️', items: [] },
     'Herbs & Spices': { icon: '🌿', items: [] },
     'Bakery': { icon: '🍞', items: [] },
+    'Household': { icon: '🧹', items: [] },
     'Other': { icon: '🛒', items: [] }
   };
 
@@ -1099,11 +1105,23 @@ function renderShopList() {
     return name.split(',')[0].trim();
   }
 
+  // Normalise name for merging — strips plurals, common suffixes, and lowercases
+  function mergeKey(name) {
+    let k = shopName(name).toLowerCase().trim();
+    // Remove trailing 's' for simple plural matching (but not 'ss' like 'dress')
+    if (k.endsWith('s') && !k.endsWith('ss') && k.length > 3) k = k.slice(0, -1);
+    // Remove common descriptors that shouldn't prevent merging
+    k = k.replace(/\b(large|medium|small|fresh|free range|organic)\b/g, '').trim();
+    // Collapse multiple spaces
+    k = k.replace(/\s+/g, ' ');
+    return k;
+  }
+
   // Combine duplicates
   const combined = {};
   filtered.forEach(ing => {
     const cleanName = shopName(ing.name);
-    const key = cleanName.toLowerCase().trim();
+    const key = mergeKey(ing.name);
     if (combined[key]) {
       combined[key].sources.add(ing.source);
       // Try to combine quantities
@@ -1610,10 +1628,12 @@ function addIngredientRow(qty = '', unit = '', name = '', aisle = 'Other') {
       <option value="Meat & Fish" ${aisle === 'Meat & Fish' ? 'selected' : ''}>🥩 Meat</option>
       <option value="Fruit & Veg" ${aisle === 'Fruit & Veg' ? 'selected' : ''}>🥕 Veg</option>
       <option value="Dairy" ${aisle === 'Dairy' ? 'selected' : ''}>🧀 Dairy</option>
+      <option value="Fridge" ${aisle === 'Fridge' ? 'selected' : ''}>🧊 Fridge</option>
       <option value="Cupboard Staples" ${aisle === 'Cupboard Staples' ? 'selected' : ''}>🥫 Cupboard</option>
       <option value="Frozen" ${aisle === 'Frozen' ? 'selected' : ''}>❄️ Frozen</option>
       <option value="Herbs & Spices" ${aisle === 'Herbs & Spices' ? 'selected' : ''}>🌿 Herbs</option>
       <option value="Bakery" ${aisle === 'Bakery' ? 'selected' : ''}>🍞 Bakery</option>
+      <option value="Household" ${aisle === 'Household' ? 'selected' : ''}>🧹 Household</option>
     </select>
     <button class="remove-ing" onclick="this.parentElement.remove()">×</button>`;
   container.appendChild(row);
@@ -1849,7 +1869,7 @@ async function importData(event) {
 // ═══════════════════════════════════════
 // SHOPPING LIST: SEARCH & MANUAL ITEMS
 // ═══════════════════════════════════════
-const AISLE_EMOJIS = {'Meat & Fish':'🥩','Fruit & Veg':'🥕','Dairy':'🧀','Cupboard Staples':'🥫','Frozen':'❄️','Herbs & Spices':'🌿','Bakery':'🍞','Other':'🛒'};
+const AISLE_EMOJIS = {'Meat & Fish':'🥩','Fruit & Veg':'🥕','Dairy':'🧀','Fridge':'🧊','Cupboard Staples':'🥫','Frozen':'❄️','Herbs & Spices':'🌿','Bakery':'🍞','Household':'🧹','Other':'🛒'};
 
 function handleShopSearch() {
   const input = document.getElementById('shopSearch');
