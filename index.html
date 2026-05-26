@@ -946,10 +946,16 @@ function renderShopList() {
   const staplesLower = staples.map(s => s.toLowerCase());
   const filtered = allIngs.filter(ing => !staplesLower.some(s => ing.name.toLowerCase().includes(s)));
 
+  // Strip prep instructions from ingredient names for shopping list display
+  function shopName(name) {
+    return name.split(',')[0].trim();
+  }
+
   // Combine duplicates
   const combined = {};
   filtered.forEach(ing => {
-    const key = ing.name.toLowerCase().trim();
+    const cleanName = shopName(ing.name);
+    const key = cleanName.toLowerCase().trim();
     if (combined[key]) {
       combined[key].sources.add(ing.source);
       // Try to combine quantities
@@ -960,7 +966,7 @@ function renderShopList() {
         if (ing.unit) combined[key].qty += ` ${ing.unit}`;
       }
     } else {
-      combined[key] = { name: ing.name, qty: String(ing.qty), unit: ing.unit || '', sources: new Set([ing.source]), aisle: ing.aisle || 'Other', rawQty: `${ing.qty}${ing.unit || ''}` };
+      combined[key] = { name: cleanName, qty: String(ing.qty), unit: ing.unit || '', sources: new Set([ing.source]), aisle: ing.aisle || 'Other', rawQty: `${ing.qty}${ing.unit || ''}` };
     }
   });
 
