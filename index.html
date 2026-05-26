@@ -1329,6 +1329,16 @@ function swapMeal(day) {
 
   if (pool.length === 0) return showToast('No recipes available to swap');
 
+  // Get recipes currently assigned to OTHER days (don't offer these)
+  const otherDayIds = new Set();
+  if (!isToddler) {
+    ['sunday', 'mon', 'tue', 'wed', 'thu', 'fri'].forEach(d => {
+      if (d !== day && weekPlan[d]) otherDayIds.add(weekPlan[d]);
+    });
+  } else {
+    toddlerSlots.forEach((id, i) => { if (i !== day && id) otherDayIds.add(id); });
+  }
+
   // Init swap history for this slot if needed
   if (!swapHistory[dayKey]) swapHistory[dayKey] = [];
 
@@ -1337,18 +1347,20 @@ function swapMeal(day) {
     swapHistory[dayKey].push(currentId);
   }
 
-  // Filter out already-seen recipes
-  let unseen = pool.filter(r => !swapHistory[dayKey].includes(r.id));
+  // Available = pool minus other days' recipes minus already-seen
+  let available = pool.filter(r => !otherDayIds.has(r.id) && !swapHistory[dayKey].includes(r.id));
 
-  // If we've seen everything, reset the history (but keep current excluded)
-  if (unseen.length === 0) {
+  // If we've seen everything (excluding other days), reset history
+  if (available.length === 0) {
     swapHistory[dayKey] = currentId ? [currentId] : [];
-    unseen = pool.filter(r => r.id !== currentId);
-    if (unseen.length === 0) unseen = pool;
+    available = pool.filter(r => !otherDayIds.has(r.id) && r.id !== currentId);
+    // If still nothing (all recipes are assigned to other days), allow any
+    if (available.length === 0) available = pool.filter(r => r.id !== currentId);
+    if (available.length === 0) available = pool;
     showToast('Cycled through all recipes — starting fresh');
   }
 
-  const pick = unseen[Math.floor(Math.random() * unseen.length)];
+  const pick = available[Math.floor(Math.random() * available.length)];
 
   if (isToddler) {
     toddlerSlots[day] = pick.id;
