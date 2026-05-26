@@ -1015,53 +1015,83 @@ function renderShopList() {
 // RENDER: MY RECIPES
 // ═══════════════════════════════════════
 function renderRecipes() {
-  const filters = ['all', 'slow_cooker', 'quick', 'batch', 'toddler', 'favourites', 'archived'];
-  const filterLabels = { all: 'All', slow_cooker: '🍲 Slow Cooker', quick: '⚡ Quick', batch: '🔁 Batch', toddler: '🧸 Toddler', favourites: '★ Favourites', archived: '📦 Archived' };
+  const filters = ['all', 'slow_cooker', 'quick', 'batch', 'favourites', 'archived'];
+  const filterLabels = { all: 'All', slow_cooker: '🍲 Slow Cooker', quick: '⚡ Quick', batch: '🔁 Batch', favourites: '★ Favourites', archived: '📦 Archived' };
 
   let pillsHtml = filters.map(f => `<button class="filter-pill ${currentFilter === f ? 'active' : ''}" onclick="setFilter('${f}')">${filterLabels[f]}</button>`).join('');
   document.getElementById('filterPills').innerHTML = pillsHtml;
 
-  let filtered = recipes;
-  if (currentFilter === 'archived') {
-    filtered = recipes.filter(r => r.archived);
-  } else if (currentFilter === 'favourites') {
-    filtered = recipes.filter(r => r.is_favourite && !r.archived);
-  } else if (currentFilter !== 'all') {
-    filtered = recipes.filter(r => r.tags && r.tags.includes(currentFilter) && !r.archived);
-  } else {
-    filtered = recipes.filter(r => !r.archived);
-  }
+  // Sort newest first (by created_at if available, otherwise by array position reversed)
+  const sorted = [...recipes].sort((a, b) => {
+    const aDate = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const bDate = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return bDate - aDate;
+  });
 
-  if (filtered.length === 0) {
-    document.getElementById('recipes-view').innerHTML = '<p style="color:var(--text-muted);font-size:13px;">No recipes found. Add your first one!</p>';
-    return;
+  // Split into main and toddler
+  let mainRecipes = sorted.filter(r => !(r.tags && r.tags.includes('toddler')));
+  let toddlerRecipes = sorted.filter(r => r.tags && r.tags.includes('toddler'));
+
+  // Apply filters
+  if (currentFilter === 'archived') {
+    mainRecipes = mainRecipes.filter(r => r.archived);
+    toddlerRecipes = toddlerRecipes.filter(r => r.archived);
+  } else if (currentFilter === 'favourites') {
+    mainRecipes = mainRecipes.filter(r => r.is_favourite && !r.archived);
+    toddlerRecipes = toddlerRecipes.filter(r => r.is_favourite && !r.archived);
+  } else if (currentFilter !== 'all') {
+    mainRecipes = mainRecipes.filter(r => r.tags && r.tags.includes(currentFilter) && !r.archived);
+    toddlerRecipes = toddlerRecipes.filter(r => r.tags && r.tags.includes(currentFilter) && !r.archived);
+  } else {
+    mainRecipes = mainRecipes.filter(r => !r.archived);
+    toddlerRecipes = toddlerRecipes.filter(r => !r.archived);
   }
 
   let html = '';
-  filtered.forEach(r => {
-    const tagLabels = { quick: '⚡ Quick', slow_cooker: '🍲 Slow Cooker', batch: '🔁 Batch', toddler: '🧸 Toddler', freezer: '❄️ Freezer', finger_food: '🤌 Finger Food' };
-    const tags = (r.tags || []).map(t => tagLabels[t] || t).join(' · ');
-    html += `<div class="recipe-item ${r.archived ? 'archived' : ''}">
-      <div class="recipe-info">
-        <div class="recipe-name">${r.name} ${r.archived ? '<span class="archived-badge">Archived</span>' : ''}</div>
-        <div class="recipe-meta">
-          ${tags ? `<span>${tags}</span>` : ''}
-          ${r.prep_time ? `<span>⏱ ${r.prep_time} min</span>` : ''}
-          <span>👫 Serves 2</span>
-          ${r.last_cooked ? `<span>📅 ${formatDate(r.last_cooked)}</span>` : ''}
-        </div>
-      </div>
-      <div class="card-actions">
-        <button class="btn-small ${r.is_favourite ? 'starred' : ''}" title="Favourite" onclick="toggleFavourite('${r.id}')">★</button>
-        <button class="btn-small" title="Edit" onclick="editRecipe('${r.id}')">✏️</button>
-        ${r.archived
-          ? `<button class="btn-small" title="Restore" onclick="toggleArchive('${r.id}')">♻️</button>`
-          : `<button class="btn-small" title="Archive" onclick="toggleArchive('${r.id}')">📦</button>`
-        }
-      </div>
-    </div>`;
-  });
+
+  // Main recipes section
+  html += '<div class="section-title" style="margin-bottom:12px;">🍽 Main Recipes</div>';
+  if (mainRecipes.length === 0) {
+    html += '<p style="color:var(--text-muted);font-size:13px;margin-bottom:24px;">No main recipes found.</p>';
+  } else {
+    mainRecipes.forEach(r => { html += renderRecipeItem(r); });
+  }
+
+  // Toddler recipes section
+  html += '<div style="margin-top:24px;padding-top:20px;border-top:2px dashed var(--border);">';
+  html += '<div class="section-title" style="margin-bottom:12px;color:var(--teal);">🧸 Toddler Recipes</div>';
+  if (toddlerRecipes.length === 0) {
+    html += '<p style="color:var(--text-muted);font-size:13px;">No toddler recipes found.</p>';
+  } else {
+    toddlerRecipes.forEach(r => { html += renderRecipeItem(r); });
+  }
+  html += '</div>';
+
   document.getElementById('recipes-view').innerHTML = html;
+}
+
+function renderRecipeItem(r) {
+  const tagLabels = { quick: '⚡ Quick', slow_cooker: '🍲 Slow Cooker', batch: '🔁 Batch', toddler: '🧸 Toddler', freezer: '❄️ Freezer', finger_food: '🤌 Finger Food' };
+  const tags = (r.tags || []).map(t => tagLabels[t] || t).join(' · ');
+  return `<div class="recipe-item ${r.archived ? 'archived' : ''}">
+    <div class="recipe-info">
+      <div class="recipe-name">${r.name} ${r.archived ? '<span class="archived-badge">Archived</span>' : ''}</div>
+      <div class="recipe-meta">
+        ${tags ? `<span>${tags}</span>` : ''}
+        ${r.prep_time ? `<span>⏱ ${r.prep_time} min</span>` : ''}
+        <span>👫 Serves 2</span>
+        ${r.last_cooked ? `<span>📅 ${formatDate(r.last_cooked)}</span>` : ''}
+      </div>
+    </div>
+    <div class="card-actions">
+      <button class="btn-small ${r.is_favourite ? 'starred' : ''}" title="Favourite" onclick="toggleFavourite('${r.id}')">★</button>
+      <button class="btn-small" title="Edit" onclick="editRecipe('${r.id}')">✏️</button>
+      ${r.archived
+        ? `<button class="btn-small" title="Restore" onclick="toggleArchive('${r.id}')">♻️</button>`
+        : `<button class="btn-small" title="Archive" onclick="toggleArchive('${r.id}')">📦</button>`
+      }
+    </div>
+  </div>`;
 }
 
 function renderAll() {
