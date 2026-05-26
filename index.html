@@ -563,6 +563,10 @@ button { font-family:'DM Sans',sans-serif; }
       <div id="rIngredients"></div>
       <button class="add-ing-btn" onclick="addIngredientRow()">+ Add Ingredient</button>
     </div>
+    <div class="form-group">
+      <label class="form-label">Notes / Method</label>
+      <textarea class="form-input" id="rNotes" placeholder="Paste method, tips, or personal notes here..." rows="4" style="resize:vertical;"></textarea>
+    </div>
     <div style="display:flex;gap:8px;margin-top:20px;">
       <button class="btn-primary" onclick="saveRecipe()" style="flex:1;">Save Recipe</button>
       <button class="btn-outline" onclick="closeRecipeModal()">Cancel</button>
@@ -1445,6 +1449,9 @@ function openRecipeModal(recipe = null) {
     addIngredientRow();
   }
 
+  // Notes
+  document.getElementById('rNotes').value = recipe ? (recipe.notes || '') : '';
+
   document.getElementById('recipeModal').classList.add('open');
 }
 
@@ -1488,6 +1495,7 @@ async function saveRecipe() {
 
   const tags = [...document.querySelectorAll('#rTags .tag-option.selected')].map(t => t.dataset.tag);
   const prepTime = parseInt(document.getElementById('rTime').value) || null;
+  const notes = document.getElementById('rNotes').value.trim() || null;
   const ingredients = [];
 
   document.querySelectorAll('#rIngredients .ing-form-row').forEach(row => {
@@ -1512,12 +1520,13 @@ async function saveRecipe() {
       r.tags = tags;
       r.prep_time = prepTime;
       r.ingredients = ingredients;
-      if (dbAvailable) await sbPut('recipes', editingRecipeId, { name, tags, prep_time: prepTime, ingredients });
+      r.notes = notes;
+      if (dbAvailable) await sbPut('recipes', editingRecipeId, { name, tags, prep_time: prepTime, ingredients, notes });
     }
   } else {
     // Create
     const newRecipe = {
-      name, tags, prep_time: prepTime, ingredients,
+      name, tags, prep_time: prepTime, ingredients, notes,
       is_favourite: false, archived: false, last_cooked: null
     };
     if (dbAvailable) {
@@ -1592,6 +1601,9 @@ async function scrapeRecipe() {
         addIngredientRow(ing.qty || '1', ing.unit || '', ing.name || '', ing.aisle || 'Cupboard Staples');
       });
     }
+
+    // Fill notes with method
+    document.getElementById('rNotes').value = data.notes || '';
 
     statusEl.textContent = '✓ Recipe imported — review and save below';
     statusEl.style.color = 'var(--green)';
