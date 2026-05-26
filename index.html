@@ -1298,11 +1298,15 @@ function openRecipeModal(recipe = null) {
     t.classList.toggle('selected', recipe && recipe.tags && recipe.tags.includes(t.dataset.tag));
   });
 
-  // Ingredients
+  // Ingredients — sort by aisle when editing
   const ingContainer = document.getElementById('rIngredients');
   ingContainer.innerHTML = '';
   if (recipe && recipe.ingredients) {
-    recipe.ingredients.forEach(ing => addIngredientRow(ing.qty, ing.unit, ing.name, ing.aisle));
+    const aisleOrder = ['Meat & Fish', 'Fruit & Veg', 'Dairy', 'Cupboard Staples', 'Frozen', 'Herbs & Spices', 'Bakery', 'Other'];
+    const sorted = [...recipe.ingredients].sort((a, b) => {
+      return (aisleOrder.indexOf(a.aisle || 'Other')) - (aisleOrder.indexOf(b.aisle || 'Other'));
+    });
+    sorted.forEach(ing => addIngredientRow(ing.qty, ing.unit, ing.name, ing.aisle));
   } else {
     addIngredientRow();
     addIngredientRow();
@@ -1694,13 +1698,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.body.appendChild(dl);
 });
 
-// Close modals on overlay click
-document.querySelectorAll('.modal-overlay').forEach(overlay => {
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) {
-      overlay.classList.remove('open');
-    }
-  });
+// Close staples modal on overlay click (but NOT recipe modal - protect user's work)
+document.getElementById('staplesModal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('staplesModal')) {
+    document.getElementById('staplesModal').classList.remove('open');
+  }
 });
 
 // ═══════════════════════════════════════
