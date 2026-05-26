@@ -1086,17 +1086,23 @@ async function markCooked(day) {
 }
 
 function renderIngredientDropdown(recipe) {
-  if (!recipe.ingredients || recipe.ingredients.length === 0) return '';
+  const hasIngs = recipe.ingredients && recipe.ingredients.length > 0;
+  const hasNotes = recipe.notes && recipe.notes.trim();
+  if (!hasIngs && !hasNotes) return '';
   return `<button class="expand-toggle" onclick="toggleExpand(this)">
-    <span class="arrow">▼</span> Ingredients (${recipe.ingredients.length})
+    <span class="arrow">▼</span> ${hasIngs ? `Ingredients (${recipe.ingredients.length})` : 'Notes'}${hasIngs && hasNotes ? ' + Notes' : ''}
   </button>
   <div class="expand-content">
-    <div class="ingredients-list">
+    ${hasIngs ? `<div class="ingredients-list">
       ${recipe.ingredients.map(ing => `<div class="ing-item">
         <span class="ing-qty">${ing.qty}${ing.unit ? ' ' + ing.unit : ''}</span>
         <span>${ing.name}</span>
       </div>`).join('')}
-    </div>
+    </div>` : ''}
+    ${hasNotes ? `<div style="margin-top:${hasIngs ? '10px' : '0'};background:var(--surface-alt);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:6px;">Notes</div>
+      <div style="font-size:13px;line-height:1.6;color:var(--text);white-space:pre-wrap;">${recipe.notes}</div>
+    </div>` : ''}
   </div>`;
 }
 
@@ -1180,17 +1186,32 @@ function renderShopList() {
   filtered.forEach(ing => {
     const cleanName = shopName(ing.name);
     const key = mergeKey(ing.name);
+    const ingUnit = (ing.unit || '').trim();
+    const ingQty = String(ing.qty).trim();
     if (combined[key]) {
       combined[key].sources.add(ing.source);
-      // Try to combine quantities
-      if (combined[key].unit === ing.unit && !isNaN(parseFloat(combined[key].qty)) && !isNaN(parseFloat(ing.qty))) {
-        combined[key].qty = String(parseFloat(combined[key].qty) + parseFloat(ing.qty));
-      } else if (combined[key].rawQty !== `${ing.qty}${ing.unit || ''}`) {
-        combined[key].qty += ` + ${ing.qty}`;
-        if (ing.unit) combined[key].qty += ` ${ing.unit}`;
+      const existUnit = combined[key].unit;
+      const existQtyNum = parseFloat(combined[key].qty);
+      const newQtyNum = parseFloat(ingQty);
+      const bothNumeric = !isNaN(existQtyNum) && !isNaN(newQtyNum);
+
+      if (bothNumeric && existUnit === ingUnit) {
+        // Same unit — add quantities
+        combined[key].qty = String(existQtyNum + newQtyNum);
+      } else if (bothNumeric && !existUnit && !ingUnit) {
+        // Both no unit — add quantities
+        combined[key].qty = String(existQtyNum + newQtyNum);
+      } else if (bothNumeric && (!existUnit || !ingUnit)) {
+        // One has no unit, one does — add quantities, keep the unit
+        combined[key].qty = String(existQtyNum + newQtyNum);
+        if (ingUnit && !existUnit) combined[key].unit = ingUnit;
+      } else if (bothNumeric && existUnit !== ingUnit) {
+        // Different units — show both
+        combined[key].qty = `${combined[key].qty} ${existUnit} + ${ingQty} ${ingUnit}`.trim();
+        combined[key].unit = '';
       }
     } else {
-      combined[key] = { name: cleanName, qty: String(ing.qty), unit: ing.unit || '', sources: new Set([ing.source]), aisle: ing.aisle || 'Other', rawQty: `${ing.qty}${ing.unit || ''}` };
+      combined[key] = { name: cleanName, qty: ingQty, unit: ingUnit, sources: new Set([ing.source]), aisle: ing.aisle || 'Other' };
     }
   });
 
