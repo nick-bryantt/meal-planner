@@ -1105,15 +1105,44 @@ function renderShopList() {
     return name.split(',')[0].trim();
   }
 
-  // Normalise name for merging — strips plurals, common suffixes, and lowercases
+  // Normalise name for merging — uses synonyms map and smart normalisation
+  const MERGE_SYNONYMS = {
+    'parmesan': 'parmesan', 'parmesan cheese': 'parmesan', 'parmigiano': 'parmesan',
+    'parmesan, grated': 'parmesan', 'parmesan, shaved': 'parmesan',
+    'cheddar': 'cheddar', 'cheddar cheese': 'cheddar', 'cheddar, grated': 'cheddar',
+    'mozzarella': 'mozzarella', 'mozzarella cheese': 'mozzarella', 'mozzarella, torn': 'mozzarella',
+    'single cream': 'single cream', 'cream': 'single cream',
+    'creme fraiche': 'crème fraîche', 'crème fraîche': 'crème fraîche', 'creme fraîche': 'crème fraîche',
+    'chicken stock': 'chicken stock', 'chicken stock cube': 'chicken stock',
+    'veg stock': 'veg stock', 'vegetable stock': 'veg stock', 'veg stock cube': 'veg stock',
+    'beef stock': 'beef stock', 'beef stock cube': 'beef stock',
+    'garlic paste': 'garlic paste', 'garlic purée': 'garlic paste', 'garlic puree': 'garlic paste',
+    'tomato paste': 'tomato purée', 'tomato purée': 'tomato purée', 'tomato puree': 'tomato purée',
+    'chopped tomatoes': 'chopped tomatoes', 'tin chopped tomatoes': 'chopped tomatoes', 'tinned tomatoes': 'chopped tomatoes',
+    'soy sauce': 'soy sauce', 'light soy sauce': 'soy sauce',
+    'green pesto': 'pesto', 'pesto': 'pesto', 'red pesto': 'red pesto',
+    'smoked paprika': 'smoked paprika', 'paprika': 'paprika', 'paprika powder': 'paprika',
+    'dijon mustard': 'dijon mustard', 'mustard': 'dijon mustard',
+    'plain flour': 'plain flour', 'flour': 'plain flour',
+    'olive oil': 'olive oil', 'oil': 'olive oil',
+    'onion': 'onion', 'onions': 'onion', 'brown onion': 'onion',
+    'garlic': 'garlic', 'garlic clove': 'garlic', 'garlic cloves': 'garlic',
+  };
+
   function mergeKey(name) {
     let k = shopName(name).toLowerCase().trim();
-    // Remove trailing 's' for simple plural matching (but not 'ss' like 'dress')
-    if (k.endsWith('s') && !k.endsWith('ss') && k.length > 3) k = k.slice(0, -1);
+    // Check synonyms first
+    if (MERGE_SYNONYMS[k]) return MERGE_SYNONYMS[k];
+    // Remove trailing 's' for simple plural matching (but not 'ss')
+    if (k.endsWith('s') && !k.endsWith('ss') && k.length > 3) {
+      const singular = k.slice(0, -1);
+      if (MERGE_SYNONYMS[singular]) return MERGE_SYNONYMS[singular];
+    }
     // Remove common descriptors that shouldn't prevent merging
     k = k.replace(/\b(large|medium|small|fresh|free range|organic)\b/g, '').trim();
-    // Collapse multiple spaces
     k = k.replace(/\s+/g, ' ');
+    // Final singular check
+    if (k.endsWith('s') && !k.endsWith('ss') && k.length > 3) k = k.slice(0, -1);
     return k;
   }
 
