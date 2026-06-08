@@ -129,10 +129,10 @@ button { font-family:'DM Sans',sans-serif; }
 }
 .day-card:hover { box-shadow:var(--shadow-md); }
 .day-card.leftover { opacity:0.6; background:var(--surface-alt); }
-.day-header { display:flex; align-items:center; justify-content:space-between; }
-.day-info { display:flex; align-items:center; gap:12px; flex:1; min-width:0; }
-.day-name { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted); min-width:32px; }
-.day-meal { font-family:'DM Serif Display',serif; font-size:17px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.day-header { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+.day-info { display:flex; align-items:flex-start; gap:12px; flex:1; min-width:0; }
+.day-name { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted); min-width:32px; padding-top:4px; }
+.day-meal { font-family:'DM Serif Display',serif; font-size:17px; }
 .day-tags { display:flex; gap:4px; margin-left:4px; flex-shrink:0; }
 .tag { font-size:10px; font-weight:600; padding:2px 8px; border-radius:12px; background:var(--tag-bg); color:var(--text-muted); white-space:nowrap; }
 .tag.quick { background:var(--green-light); color:var(--green); }
@@ -401,6 +401,21 @@ button { font-family:'DM Sans',sans-serif; }
 
 /* ── Merge Mode ── */
 .shop-item.merge-mode { cursor:pointer; }
+
+/* ── Day Themes Config ── */
+.theme-row { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--surface-alt); }
+.theme-row:last-child { border-bottom:none; }
+.theme-day-label { font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:0.6px; color:var(--text-muted); min-width:36px; }
+.theme-select {
+  flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:var(--radius-sm);
+  font-family:'DM Sans',sans-serif; font-size:13px; background:var(--surface); color:var(--text);
+}
+.theme-badge {
+  font-size:10px; font-weight:600; padding:2px 7px; border-radius:10px;
+  background:var(--surface-alt); color:var(--text-muted); white-space:nowrap;
+}
+
+/* ── Merge Mode continued ── */
 .shop-item.merge-mode:hover { background:var(--accent-light); }
 .shop-item.merge-selected { background:var(--accent-light); border:1px solid var(--accent); border-radius:var(--radius-sm); }
 .merge-confirm-box {
@@ -495,7 +510,10 @@ button { font-family:'DM Sans',sans-serif; }
     <div id="tonight-view"></div>
     <div class="generate-bar">
       <div class="section-title">This Week's Plan</div>
-      <button class="btn-primary" onclick="generateWeek()">🔀 Generate Week</button>
+      <div style="display:flex;gap:6px;">
+        <button class="btn-outline" onclick="openThemesModal()" id="themesBtn">⚙️ Day Themes${useThemes ? ' ✓' : ''}</button>
+        <button class="btn-primary" onclick="generateWeek()">🔀 Generate Week</button>
+      </div>
     </div>
     <div id="week-view"><div class="loading">Loading</div></div>
 
@@ -521,6 +539,7 @@ button { font-family:'DM Sans',sans-serif; }
       <div style="display:flex;gap:6px;">
         <button class="btn-outline" id="mergeToggle" onclick="toggleMergeMode()">🔗 Merge</button>
         <button class="btn-outline" onclick="clearCheckedShop()">Clear Checked</button>
+        <button class="btn-outline" onclick="clearAllShop()">Clear All</button>
         <button class="btn-outline" onclick="copyShopList()">📋 Copy</button>
       </div>
     </div>
@@ -594,9 +613,20 @@ button { font-family:'DM Sans',sans-serif; }
         <div class="tag-option" data-tag="quick" onclick="toggleTagOption(this)">⚡ Quick</div>
         <div class="tag-option" data-tag="slow_cooker" onclick="toggleTagOption(this)">🍲 Slow Cooker</div>
         <div class="tag-option" data-tag="batch" onclick="toggleTagOption(this)">🔁 Batch</div>
+        <div class="tag-option" data-tag="lazy" onclick="toggleTagOption(this)">🛋️ Lazy / Easy</div>
         <div class="tag-option" data-tag="toddler" onclick="toggleTagOption(this)">🧸 Toddler</div>
         <div class="tag-option" data-tag="freezer" onclick="toggleTagOption(this)">❄️ Freezer</div>
         <div class="tag-option" data-tag="finger_food" onclick="toggleTagOption(this)">🤌 Finger Food</div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Meal Type (for day themes)</label>
+      <div class="tag-options" id="rMealType">
+        <div class="tag-option" data-tag="pasta" onclick="toggleMealType(this)">🍝 Pasta</div>
+        <div class="tag-option" data-tag="rice" onclick="toggleMealType(this)">🍚 Rice</div>
+        <div class="tag-option" data-tag="meat_veg" onclick="toggleMealType(this)">🥩 Meat & Veg</div>
+        <div class="tag-option" data-tag="curry" onclick="toggleMealType(this)">🍛 Curry</div>
+        <div class="tag-option" data-tag="salad" onclick="toggleMealType(this)">🥗 Salad</div>
       </div>
     </div>
     <div class="form-group">
@@ -632,6 +662,22 @@ button { font-family:'DM Sans',sans-serif; }
 </div>
 
 </div>
+<!-- THEMES MODAL -->
+<div class="modal-overlay" id="themesModal">
+  <div class="modal">
+    <h2>Day Themes</h2>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">Set a theme per day — Generate Week will only pick recipes matching that day's theme.</p>
+    <div class="toggle-row" style="margin-bottom:16px;">
+      <span style="font-weight:600;">Enable day themes</span>
+      <div class="toggle ${useThemes ? 'on' : ''}" id="themesToggle" onclick="toggleUseThemes()"></div>
+    </div>
+    <div id="themesConfig"></div>
+    <div style="margin-top:16px;">
+      <button class="btn-outline" onclick="closeThemesModal()" style="width:100%;text-align:center;">Done</button>
+    </div>
+  </div>
+</div>
+
 <!-- PICK RECIPE MODAL -->
 <div class="modal-overlay" id="pickModal">
   <div class="modal">
@@ -770,6 +816,20 @@ let pendingNewItem = null;
 let swapHistory = {}; // tracks seen recipe IDs per day slot
 let pickingDay = null; // which day the pick modal is for
 let customSynonyms = {}; // user-defined merge rules
+let useThemes = false; // master toggle for day themes
+let dayThemes = { sunday: 'slow_cooker', mon: 'any', tue: 'any', wed: 'any', thu: 'any', fri: 'any' };
+
+const MEAL_TYPES = [
+  { id: 'any', label: 'Any', icon: '🎲' },
+  { id: 'pasta', label: 'Pasta', icon: '🍝' },
+  { id: 'rice', label: 'Rice', icon: '🍚' },
+  { id: 'meat_veg', label: 'Meat & Veg', icon: '🥩' },
+  { id: 'curry', label: 'Curry', icon: '🍛' },
+  { id: 'salad', label: 'Salad', icon: '🥗' },
+  { id: 'batch', label: 'Batch / Leftover', icon: '🔁' },
+  { id: 'slow_cooker', label: 'Slow Cooker', icon: '🍲' },
+  { id: 'skip', label: 'Takeaway / Skip', icon: '🍕' },
+];
 
 // Built-in merge synonyms for shopping list
 const MERGE_SYNONYMS = {
@@ -918,6 +978,8 @@ async function loadFromDB() {
     manualItems = s.manualItems || [];
     if (s.knownItems && s.knownItems.length > 0) knownItems = s.knownItems;
     customSynonyms = s.customSynonyms || {};
+    useThemes = s.useThemes || false;
+    dayThemes = s.dayThemes || dayThemes;
   }
   // Also save to localStorage as backup
   saveToLocal();
@@ -938,20 +1000,22 @@ function loadFromLocal() {
       manualItems = d.manualItems || [];
       if (d.knownItems && d.knownItems.length > 0) knownItems = d.knownItems;
       customSynonyms = d.customSynonyms || {};
+      useThemes = d.useThemes || false;
+      dayThemes = d.dayThemes || dayThemes;
     }
   } catch (e) { console.error('loadLocal', e); }
 }
 
 function saveToLocal() {
   localStorage.setItem('mealPlannerData', JSON.stringify({
-    recipes, weekPlan, locks, leftovers, toddlerSlots, toddlerInShopList, staples, shopChecked, manualItems, knownItems, customSynonyms
+    recipes, weekPlan, locks, leftovers, toddlerSlots, toddlerInShopList, staples, shopChecked, manualItems, knownItems, customSynonyms, useThemes, dayThemes
   }));
 }
 
 async function saveState() {
   saveToLocal();
   if (!dbAvailable) return;
-  const stateData = { weekPlan, locks, leftovers, toddlerSlots, toddlerInShopList, staples, shopChecked, manualItems, knownItems, customSynonyms };
+  const stateData = { weekPlan, locks, leftovers, toddlerSlots, toddlerInShopList, staples, shopChecked, manualItems, knownItems, customSynonyms, useThemes, dayThemes };
   // Upsert app_state
   const existing = await sbGet('app_state', 'select=id&key=eq.main&limit=1');
   if (existing && existing.length > 0) {
@@ -1007,7 +1071,8 @@ function renderWeek() {
         ${sunRecipe ? `<button class="btn-clear" title="Clear meal" onclick="clearMeal('sunday')">✕</button>` : ''}
       </div>
     </div>
-    ${sunRecipe ? renderIngredientDropdown(sunRecipe) : ''}
+    ${sunRecipe && (!sunRecipe.ingredients || sunRecipe.ingredients.length === 0) ? `<div style="margin-top:8px;padding:8px 12px;background:#FEF6E0;border:1px solid #E8D5A0;border-radius:var(--radius-sm);font-size:12px;color:#8A6D2B;cursor:pointer;display:flex;align-items:center;gap:6px;" onclick="editRecipe('${sunRecipe.id}')">⚠️ No ingredients — tap to add</div>` : ''}
+    ${sunRecipe && sunRecipe.ingredients && sunRecipe.ingredients.length > 0 ? renderIngredientDropdown(sunRecipe) : ''}
   </div>`;
 
   // Mon-Fri
@@ -1015,25 +1080,43 @@ function renderWeek() {
   ['mon', 'tue', 'wed', 'thu', 'fri'].forEach(day => {
     const recipe = recipes.find(r => r.id === weekPlan[day]);
     const isLeftover = leftovers[day];
+    const isSkip = useThemes && dayThemes[day] === 'skip';
+    const themeInfo = useThemes && dayThemes[day] !== 'any' ? MEAL_TYPES.find(mt => mt.id === dayThemes[day]) : null;
+
+    if (isSkip) {
+      html += `<div class="day-card" style="opacity:0.6;background:var(--surface-alt);">
+        <div class="day-header">
+          <div class="day-info">
+            <span class="day-name">${dayLabels[day]}</span>
+            <span class="day-meal">🍕 Takeaway / Skip</span>
+          </div>
+        </div>
+      </div>`;
+      return;
+    }
+
     html += `<div class="day-card ${isLeftover ? 'leftover' : ''}">
       <div class="day-header">
         <div class="day-info">
           <span class="day-name">${dayLabels[day]}</span>
           <span class="day-meal">${isLeftover ? '🍱 Leftovers' : (recipe ? recipe.name : '<span style="color:var(--text-light)">—</span>')}</span>
-          ${!isLeftover && recipe ? `<div class="day-tags">
-            ${recipe.tags && recipe.tags.includes('quick') ? '<span class="tag quick">Quick</span>' : ''}
-            ${recipe.is_favourite ? '<span class="tag fav">★</span>' : ''}
+          ${!isLeftover ? `<div class="day-tags">
+            ${themeInfo ? `<span class="tag">${themeInfo.icon}</span>` : ''}
+            ${recipe && recipe.tags && recipe.tags.includes('quick') ? '<span class="tag quick">Quick</span>' : ''}
+            ${recipe && recipe.is_favourite ? '<span class="tag fav">★</span>' : ''}
           </div>` : ''}
         </div>
         <div class="card-actions">
           <button class="btn-small ${isLeftover ? 'locked' : ''}" title="${isLeftover ? 'Remove leftovers' : 'Mark as leftovers'}" onclick="toggleLeftover('${day}')" style="${isLeftover ? 'background:var(--green);border-color:var(--green);color:white;' : ''}">🍱</button>
-          ${!isLeftover ? `<button class="btn-small" title="Pick recipe" onclick="openPickModal('${day}')">📋</button>
+          ${!isLeftover ? `<button class="btn-small" title="Lazy swap" onclick="lazySwap('${day}')" style="${recipe && recipe.tags && recipe.tags.includes('lazy') ? 'color:#8B5E3C;border-color:#8B5E3C;' : ''}">🛋️</button>
+          <button class="btn-small" title="Pick recipe" onclick="openPickModal('${day}')">📋</button>
           <button class="btn-small" onclick="swapMeal('${day}')">🔀</button>
           <button class="btn-small ${locks[day] ? 'locked' : ''}" onclick="toggleLock('${day}')">${locks[day] ? '🔒' : '🔓'}</button>
           ${recipe ? `<button class="btn-clear" title="Clear meal" onclick="clearMeal('${day}')">✕</button>` : ''}` : ''}
         </div>
       </div>
-      ${!isLeftover && recipe ? renderIngredientDropdown(recipe) : ''}
+      ${!isLeftover && recipe && (!recipe.ingredients || recipe.ingredients.length === 0) ? `<div style="margin-top:8px;padding:8px 12px;background:#FEF6E0;border:1px solid #E8D5A0;border-radius:var(--radius-sm);font-size:12px;color:#8A6D2B;cursor:pointer;display:flex;align-items:center;gap:6px;" onclick="editRecipe('${recipe.id}')">⚠️ No ingredients — tap to add</div>` : ''}
+      ${!isLeftover && recipe && recipe.ingredients && recipe.ingredients.length > 0 ? renderIngredientDropdown(recipe) : ''}
     </div>`;
   });
   html += '</div>';
@@ -1266,8 +1349,8 @@ function renderShopList() {
 // RENDER: MY RECIPES
 // ═══════════════════════════════════════
 function renderRecipes() {
-  const filters = ['all', 'slow_cooker', 'quick', 'batch', 'favourites', 'archived'];
-  const filterLabels = { all: 'All', slow_cooker: '🍲 Slow Cooker', quick: '⚡ Quick', batch: '🔁 Batch', favourites: '★ Favourites', archived: '📦 Archived' };
+  const filters = ['all', 'slow_cooker', 'quick', 'batch', 'lazy', 'favourites', 'archived'];
+  const filterLabels = { all: 'All', slow_cooker: '🍲 Slow Cooker', quick: '⚡ Quick', batch: '🔁 Batch', lazy: '🛋️ Lazy', favourites: '★ Favourites', archived: '📦 Archived' };
 
   let pillsHtml = filters.map(f => `<button class="filter-pill ${currentFilter === f ? 'active' : ''}" onclick="setFilter('${f}')">${filterLabels[f]}</button>`).join('');
   document.getElementById('filterPills').innerHTML = pillsHtml;
@@ -1322,13 +1405,16 @@ function renderRecipes() {
 }
 
 function renderRecipeItem(r) {
-  const tagLabels = { quick: '⚡ Quick', slow_cooker: '🍲 Slow Cooker', batch: '🔁 Batch', toddler: '🧸 Toddler', freezer: '❄️ Freezer', finger_food: '🤌 Finger Food' };
+  const tagLabels = { quick: '⚡ Quick', slow_cooker: '🍲 Slow Cooker', batch: '🔁 Batch', lazy: '🛋️ Lazy', toddler: '🧸 Toddler', freezer: '❄️ Freezer', finger_food: '🤌 Finger Food' };
+  const mealTypeLabels = { pasta: '🍝 Pasta', rice: '🍚 Rice', meat_veg: '🥩 Meat & Veg', curry: '🍛 Curry', salad: '🥗 Salad' };
   const tags = (r.tags || []).map(t => tagLabels[t] || t).join(' · ');
+  const mealType = r.meal_type ? mealTypeLabels[r.meal_type] || '' : '';
   return `<div class="recipe-item ${r.archived ? 'archived' : ''}">
     <div class="recipe-info">
       <div class="recipe-name">${r.name} ${r.archived ? '<span class="archived-badge">Archived</span>' : ''}</div>
       <div class="recipe-meta">
         ${tags ? `<span>${tags}</span>` : ''}
+        ${mealType ? `<span>${mealType}</span>` : ''}
         ${r.prep_time ? `<span>⏱ ${r.prep_time} min</span>` : ''}
         <span>👫 Serves 2</span>
         ${r.last_cooked ? `<span>📅 ${formatDate(r.last_cooked)}</span>` : ''}
@@ -1376,14 +1462,40 @@ function generateWeek() {
 
   // Sunday — slow cooker if available
   if (!locks.sunday) {
-    const pool = slowCooker.length > 0 ? slowCooker : adultRecipes;
-    weekPlan.sunday = pickRandom(pool, [])?.id || null;
+    if (useThemes && dayThemes.sunday === 'skip') {
+      weekPlan.sunday = null;
+    } else {
+      const pool = slowCooker.length > 0 ? slowCooker : adultRecipes;
+      weekPlan.sunday = pickRandom(pool, [])?.id || null;
+    }
   }
 
   // Mon-Fri
   const used = [weekPlan.sunday].filter(Boolean);
   ['mon', 'tue', 'wed', 'thu', 'fri'].forEach(day => {
     if (locks[day] || leftovers[day]) return;
+
+    // Handle themes
+    if (useThemes) {
+      const theme = dayThemes[day];
+      if (theme === 'skip') {
+        weekPlan[day] = null;
+        return;
+      }
+      if (theme !== 'any') {
+        const themedPool = getThemedPool(day, theme);
+        if (themedPool.length > 0) {
+          const pick = pickRandom(themedPool, used);
+          if (pick) {
+            weekPlan[day] = pick.id;
+            used.push(pick.id);
+          }
+          return;
+        }
+        // Fall through to regular pool if themed pool is empty
+      }
+    }
+
     const pick = pickRandom(regular.length >= 5 ? regular : adultRecipes, used);
     if (pick) {
       weekPlan[day] = pick.id;
@@ -1424,11 +1536,23 @@ function pickRandom(pool, exclude) {
 function swapMeal(day) {
   const isToddler = typeof day === 'number';
   const dayKey = isToddler ? 'toddler_' + day : day;
-  const pool = isToddler
-    ? recipes.filter(r => !r.archived && r.tags && r.tags.includes('toddler'))
-    : day === 'sunday'
-      ? recipes.filter(r => !r.archived && r.tags && r.tags.includes('slow_cooker'))
-      : recipes.filter(r => !r.archived && !(r.tags && r.tags.includes('toddler')) && !(r.tags && r.tags.includes('slow_cooker')));
+  let pool;
+
+  if (isToddler) {
+    pool = recipes.filter(r => !r.archived && r.tags && r.tags.includes('toddler'));
+  } else if (useThemes && dayThemes[day] && dayThemes[day] !== 'any' && dayThemes[day] !== 'skip') {
+    pool = getThemedPool(day, dayThemes[day]);
+    // Fallback to regular pool if themed pool is empty
+    if (pool.length === 0) {
+      pool = day === 'sunday'
+        ? recipes.filter(r => !r.archived && r.tags && r.tags.includes('slow_cooker'))
+        : recipes.filter(r => !r.archived && !(r.tags && r.tags.includes('toddler')) && !(r.tags && r.tags.includes('slow_cooker')));
+    }
+  } else if (day === 'sunday') {
+    pool = recipes.filter(r => !r.archived && r.tags && r.tags.includes('slow_cooker'));
+  } else {
+    pool = recipes.filter(r => !r.archived && !(r.tags && r.tags.includes('toddler')) && !(r.tags && r.tags.includes('slow_cooker')));
+  }
 
   if (pool.length === 0) return showToast('No recipes available to swap');
 
@@ -1473,6 +1597,46 @@ function swapMeal(day) {
   saveState();
   renderWeek();
   if (document.querySelector('.tab.active').dataset.tab === 'shopping') renderShopList();
+}
+
+function lazySwap(day) {
+  // Get lazy recipes, filtered by current day theme if themes are on
+  let pool = recipes.filter(r => !r.archived && !(r.tags && r.tags.includes('toddler')) && r.tags && r.tags.includes('lazy'));
+
+  // If themes are on, try to match the theme + lazy
+  if (useThemes && dayThemes[day] && dayThemes[day] !== 'any' && dayThemes[day] !== 'skip') {
+    const theme = dayThemes[day];
+    let themedLazy;
+    if (theme === 'batch') {
+      themedLazy = pool.filter(r => r.tags && r.tags.includes('batch'));
+    } else if (theme === 'slow_cooker') {
+      themedLazy = pool.filter(r => r.tags && r.tags.includes('slow_cooker'));
+    } else {
+      themedLazy = pool.filter(r => r.meal_type === theme);
+    }
+    // Use themed+lazy if any exist, otherwise fall back to all lazy
+    if (themedLazy.length > 0) pool = themedLazy;
+  }
+
+  if (pool.length === 0) return showToast('No lazy recipes found — tag some with 🛋️');
+
+  // Exclude other days' recipes
+  const otherDayIds = new Set();
+  ['sunday', 'mon', 'tue', 'wed', 'thu', 'fri'].forEach(d => {
+    if (d !== day && weekPlan[d]) otherDayIds.add(weekPlan[d]);
+  });
+
+  const currentId = weekPlan[day];
+  let available = pool.filter(r => !otherDayIds.has(r.id) && r.id !== currentId);
+  if (available.length === 0) available = pool.filter(r => r.id !== currentId);
+  if (available.length === 0) available = pool;
+
+  const pick = available[Math.floor(Math.random() * available.length)];
+  weekPlan[day] = pick.id;
+  saveState();
+  renderWeek();
+  if (document.querySelector('.tab.active').dataset.tab === 'shopping') renderShopList();
+  showToast('Lazy night: ' + pick.name + ' 🛋️');
 }
 
 // ═══════════════════════════════════════
@@ -1606,6 +1770,39 @@ function clearCheckedShop() {
   showToast('Shopping list reset');
 }
 
+function clearAllShop() {
+  if (!confirm('Clear the entire shopping list? Manually added items will be removed. Recipe items will still show unless you clear meals from This Week.')) return;
+  shopChecked = {};
+  manualItems = [];
+  // Check all recipe-generated items so they appear as "done"
+  // This effectively hides them without clearing the meal plan
+  const days = ['sunday', 'mon', 'tue', 'wed', 'thu', 'fri'];
+  days.forEach(day => {
+    if (leftovers[day]) return;
+    const recipe = recipes.find(r => r.id === weekPlan[day]);
+    if (recipe && recipe.ingredients) {
+      recipe.ingredients.forEach(ing => {
+        const key = mergeKey(ing.name);
+        shopChecked[key] = true;
+      });
+    }
+  });
+  if (toddlerInShopList) {
+    toddlerSlots.forEach(id => {
+      const recipe = recipes.find(r => r.id === id);
+      if (recipe && recipe.ingredients) {
+        recipe.ingredients.forEach(ing => {
+          const key = mergeKey(ing.name);
+          shopChecked[key] = true;
+        });
+      }
+    });
+  }
+  saveState();
+  renderShopList();
+  showToast('Shopping list cleared — add top-up items');
+}
+
 function copyShopList() {
   const items = document.querySelectorAll('.shop-item:not(.checked-off)');
   let text = '🛒 Shopping List\n\n';
@@ -1667,6 +1864,11 @@ function openRecipeModal(recipe = null) {
   // Reset tags
   document.querySelectorAll('#rTags .tag-option').forEach(t => {
     t.classList.toggle('selected', recipe && recipe.tags && recipe.tags.includes(t.dataset.tag));
+  });
+
+  // Reset meal type
+  document.querySelectorAll('#rMealType .tag-option').forEach(t => {
+    t.classList.toggle('selected', recipe && recipe.meal_type === t.dataset.tag);
   });
 
   // Ingredients — sort by aisle when editing
@@ -1733,6 +1935,8 @@ async function saveRecipe() {
   const tags = [...document.querySelectorAll('#rTags .tag-option.selected')].map(t => t.dataset.tag);
   const prepTime = parseInt(document.getElementById('rTime').value) || null;
   const notes = document.getElementById('rNotes').value.trim() || null;
+  const mealTypeEl = document.querySelector('#rMealType .tag-option.selected');
+  const meal_type = mealTypeEl ? mealTypeEl.dataset.tag : null;
   const ingredients = [];
 
   document.querySelectorAll('#rIngredients .ing-form-row').forEach(row => {
@@ -1758,12 +1962,13 @@ async function saveRecipe() {
       r.prep_time = prepTime;
       r.ingredients = ingredients;
       r.notes = notes;
-      if (dbAvailable) await sbPut('recipes', editingRecipeId, { name, tags, prep_time: prepTime, ingredients, notes });
+      r.meal_type = meal_type;
+      if (dbAvailable) await sbPut('recipes', editingRecipeId, { name, tags, prep_time: prepTime, ingredients, notes, meal_type });
     }
   } else {
     // Create
     const newRecipe = {
-      name, tags, prep_time: prepTime, ingredients, notes,
+      name, tags, prep_time: prepTime, ingredients, notes, meal_type,
       is_favourite: false, archived: false, last_cooked: null
     };
     if (dbAvailable) {
@@ -1891,6 +2096,88 @@ function removeStaple(index) {
   staples.splice(index, 1);
   saveState();
   renderStaples();
+}
+
+// ═══════════════════════════════════════
+// DAY THEMES
+// ═══════════════════════════════════════
+function openThemesModal() {
+  renderThemesConfig();
+  document.getElementById('themesModal').classList.add('open');
+}
+
+function closeThemesModal() {
+  document.getElementById('themesModal').classList.remove('open');
+  document.getElementById('themesBtn').innerHTML = `⚙️ Day Themes${useThemes ? ' ✓' : ''}`;
+  renderWeek();
+}
+
+function toggleUseThemes() {
+  useThemes = !useThemes;
+  document.getElementById('themesToggle').classList.toggle('on', useThemes);
+  saveState();
+  renderThemesConfig();
+}
+
+function renderThemesConfig() {
+  const days = [
+    { key: 'sunday', label: 'Sun' },
+    { key: 'mon', label: 'Mon' },
+    { key: 'tue', label: 'Tue' },
+    { key: 'wed', label: 'Wed' },
+    { key: 'thu', label: 'Thu' },
+    { key: 'fri', label: 'Fri' },
+  ];
+
+  let html = '';
+  if (!useThemes) {
+    html = '<p style="font-size:13px;color:var(--text-light);">Enable themes above to configure each day.</p>';
+  } else {
+    days.forEach(d => {
+      html += `<div class="theme-row">
+        <span class="theme-day-label">${d.label}</span>
+        <select class="theme-select" onchange="setDayTheme('${d.key}', this.value)">
+          ${MEAL_TYPES.map(mt => `<option value="${mt.id}" ${dayThemes[d.key] === mt.id ? 'selected' : ''}>${mt.icon} ${mt.label}</option>`).join('')}
+        </select>
+        <span style="font-size:12px;color:var(--text-light);">${countRecipesForTheme(d.key, dayThemes[d.key])}</span>
+      </div>`;
+    });
+  }
+  document.getElementById('themesConfig').innerHTML = html;
+}
+
+function setDayTheme(day, theme) {
+  dayThemes[day] = theme;
+  saveState();
+  renderThemesConfig();
+}
+
+function countRecipesForTheme(day, theme) {
+  if (theme === 'any') return '';
+  if (theme === 'skip') return '';
+  const pool = getThemedPool(day, theme);
+  return `(${pool.length})`;
+}
+
+function getThemedPool(day, theme) {
+  if (theme === 'skip') return [];
+  const isSunday = day === 'sunday';
+  let pool;
+  if (isSunday || theme === 'slow_cooker') {
+    pool = recipes.filter(r => !r.archived && !(r.tags && r.tags.includes('toddler')) && r.tags && r.tags.includes('slow_cooker'));
+  } else {
+    pool = recipes.filter(r => !r.archived && !(r.tags && r.tags.includes('toddler')) && !(r.tags && r.tags.includes('slow_cooker')));
+  }
+  if (theme === 'any' || theme === 'slow_cooker') return pool;
+  if (theme === 'batch') return pool.filter(r => r.tags && r.tags.includes('batch'));
+  // Filter by meal_type tag
+  return pool.filter(r => r.meal_type === theme);
+}
+
+function toggleMealType(el) {
+  // Only allow one meal type selected at a time
+  document.querySelectorAll('#rMealType .tag-option').forEach(t => t.classList.remove('selected'));
+  el.classList.add('selected');
 }
 
 // ═══════════════════════════════════════
