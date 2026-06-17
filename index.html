@@ -507,12 +507,16 @@ button { font-family:'DM Sans',sans-serif; }
 <div class="main">
   <!-- THIS WEEK TAB -->
   <div class="tab-content active" id="tab-week">
+    <div style="display:flex;gap:4px;margin-bottom:16px;">
+      <button class="filter-pill active" id="weekToggleThis" onclick="switchWeekView('this')">This Week</button>
+      <button class="filter-pill" id="weekToggleNext" onclick="switchWeekView('next')">Next Week</button>
+    </div>
     <div id="tonight-view"></div>
     <div class="generate-bar">
-      <div class="section-title">This Week's Plan</div>
+      <div class="section-title" id="weekViewTitle">This Week's Plan</div>
       <div style="display:flex;gap:6px;">
-        <button class="btn-outline" onclick="openThemesModal()" id="themesBtn">⚙️ Day Themes${useThemes ? ' ✓' : ''}</button>
-        <button class="btn-primary" onclick="generateWeek()">🔀 Generate Week</button>
+        <button class="btn-outline" onclick="openThemesModal()" id="themesBtn">⚙️ Themes</button>
+        <button class="btn-primary" onclick="generateWeekForView()">🔀 Generate</button>
       </div>
     </div>
     <div id="week-view"><div class="loading">Loading</div></div>
@@ -542,6 +546,11 @@ button { font-family:'DM Sans',sans-serif; }
         <button class="btn-outline" onclick="clearAllShop()">Clear All</button>
         <button class="btn-outline" onclick="copyShopList()">📋 Copy</button>
       </div>
+    </div>
+    <div style="display:flex;gap:4px;margin-bottom:12px;">
+      <button class="filter-pill active" id="shopScopeThis" onclick="setShopScope('this')">This Week</button>
+      <button class="filter-pill" id="shopScopeNext" onclick="setShopScope('next')">Next Week</button>
+      <button class="filter-pill" id="shopScopeBoth" onclick="setShopScope('both')">Both Weeks</button>
     </div>
     <div id="merge-bar" style="display:none; background:var(--accent-light); border:1px solid var(--accent); border-radius:var(--radius); padding:12px 14px; margin-bottom:12px;">
       <div style="font-size:12px; font-weight:600; color:var(--accent); margin-bottom:8px;">MERGE MODE — tap two items to combine</div>
@@ -802,6 +811,10 @@ function showApp() {
 // ═══════════════════════════════════════
 let recipes = [];
 let weekPlan = { sunday: null, mon: null, tue: null, wed: null, thu: null, fri: null };
+let nextWeekPlan = { sunday: null, mon: null, tue: null, wed: null, thu: null, fri: null };
+let nextWeekLocks = { sunday: false, mon: false, tue: false, wed: false, thu: false, fri: false };
+let nextWeekLeftovers = { mon: false, tue: false, wed: false, thu: false, fri: false };
+let nextWeekToddlerSlots = [null, null, null];
 let locks = { sunday: false, mon: false, tue: false, wed: false, thu: false, fri: false };
 let leftovers = { mon: false, tue: false, wed: false, thu: false, fri: false };
 let toddlerSlots = [null, null, null];
@@ -813,11 +826,13 @@ let currentFilter = 'all';
 let dbAvailable = false;
 let manualItems = [];
 let pendingNewItem = null;
-let swapHistory = {}; // tracks seen recipe IDs per day slot
-let pickingDay = null; // which day the pick modal is for
-let customSynonyms = {}; // user-defined merge rules
-let useThemes = false; // master toggle for day themes
+let swapHistory = {};
+let pickingDay = null;
+let customSynonyms = {};
+let useThemes = false;
 let dayThemes = { sunday: 'slow_cooker', mon: 'any', tue: 'any', wed: 'any', thu: 'any', fri: 'any' };
+let viewingWeek = 'this'; // 'this' or 'next'
+let shopScope = 'this'; // 'this', 'next', or 'both'
 
 const MEAL_TYPES = [
   { id: 'any', label: 'Any', icon: '🎲' },
@@ -830,6 +845,42 @@ const MEAL_TYPES = [
   { id: 'slow_cooker', label: 'Slow Cooker', icon: '🍲' },
   { id: 'skip', label: 'Takeaway / Skip', icon: '🍕' },
 ];
+
+// Week-aware getters — return the active week's data based on viewingWeek
+function getActivePlan() { return viewingWeek === 'next' ? nextWeekPlan : weekPlan; }
+function getActiveLocks() { return viewingWeek === 'next' ? nextWeekLocks : locks; }
+function getActiveLeftovers() { return viewingWeek === 'next' ? nextWeekLeftovers : leftovers; }
+function getActiveToddlerSlots() { return viewingWeek === 'next' ? nextWeekToddlerSlots : toddlerSlots; }
+function setActivePlan(day, val) { if (viewingWeek === 'next') nextWeekPlan[day] = val; else weekPlan[day] = val; }
+function setActiveLock(day, val) { if (viewingWeek === 'next') nextWeekLocks[day] = val; else locks[day] = val; }
+function setActiveLeftover(day, val) { if (viewingWeek === 'next') nextWeekLeftovers[day] = val; else leftovers[day] = val; }
+function setActiveToddlerSlot(i, val) { if (viewingWeek === 'next') nextWeekToddlerSlots[i] = val; else toddlerSlots[i] = val; }
+
+function switchWeekView(week) {
+  viewingWeek = week;
+  document.getElementById('weekToggleThis').classList.toggle('active', week === 'this');
+  document.getElementById('weekToggleNext').classList.toggle('active', week === 'next');
+  document.getElementById('weekViewTitle').textContent = week === 'this' ? "This Week's Plan" : "Next Week's Plan";
+  // Only show tonight's dinner on "this week"
+  document.getElementById('tonight-view').style.display = week === 'this' ? 'block' : 'none';
+  renderWeek();
+}
+
+function setShopScope(scope) {
+  shopScope = scope;
+  document.getElementById('shopScopeThis').classList.toggle('active', scope === 'this');
+  document.getElementById('shopScopeNext').classList.toggle('active', scope === 'next');
+  document.getElementById('shopScopeBoth').classList.toggle('active', scope === 'both');
+  renderShopList();
+}
+
+function generateWeekForView() {
+  if (viewingWeek === 'next') {
+    generateWeekInto(nextWeekPlan, nextWeekLocks, nextWeekLeftovers, nextWeekToddlerSlots);
+  } else {
+    generateWeek();
+  }
+}
 
 // Built-in merge synonyms for shopping list
 const MERGE_SYNONYMS = {
@@ -980,6 +1031,10 @@ async function loadFromDB() {
     customSynonyms = s.customSynonyms || {};
     useThemes = s.useThemes || false;
     dayThemes = s.dayThemes || dayThemes;
+    nextWeekPlan = s.nextWeekPlan || nextWeekPlan;
+    nextWeekLocks = s.nextWeekLocks || nextWeekLocks;
+    nextWeekLeftovers = s.nextWeekLeftovers || nextWeekLeftovers;
+    nextWeekToddlerSlots = s.nextWeekToddlerSlots || nextWeekToddlerSlots;
   }
   // Also save to localStorage as backup
   saveToLocal();
@@ -1002,20 +1057,24 @@ function loadFromLocal() {
       customSynonyms = d.customSynonyms || {};
       useThemes = d.useThemes || false;
       dayThemes = d.dayThemes || dayThemes;
+      nextWeekPlan = d.nextWeekPlan || nextWeekPlan;
+      nextWeekLocks = d.nextWeekLocks || nextWeekLocks;
+      nextWeekLeftovers = d.nextWeekLeftovers || nextWeekLeftovers;
+      nextWeekToddlerSlots = d.nextWeekToddlerSlots || nextWeekToddlerSlots;
     }
   } catch (e) { console.error('loadLocal', e); }
 }
 
 function saveToLocal() {
   localStorage.setItem('mealPlannerData', JSON.stringify({
-    recipes, weekPlan, locks, leftovers, toddlerSlots, toddlerInShopList, staples, shopChecked, manualItems, knownItems, customSynonyms, useThemes, dayThemes
+    recipes, weekPlan, locks, leftovers, toddlerSlots, toddlerInShopList, staples, shopChecked, manualItems, knownItems, customSynonyms, useThemes, dayThemes, nextWeekPlan, nextWeekLocks, nextWeekLeftovers, nextWeekToddlerSlots
   }));
 }
 
 async function saveState() {
   saveToLocal();
   if (!dbAvailable) return;
-  const stateData = { weekPlan, locks, leftovers, toddlerSlots, toddlerInShopList, staples, shopChecked, manualItems, knownItems, customSynonyms, useThemes, dayThemes };
+  const stateData = { weekPlan, locks, leftovers, toddlerSlots, toddlerInShopList, staples, shopChecked, manualItems, knownItems, customSynonyms, useThemes, dayThemes, nextWeekPlan, nextWeekLocks, nextWeekLeftovers, nextWeekToddlerSlots };
   // Upsert app_state
   const existing = await sbGet('app_state', 'select=id&key=eq.main&limit=1');
   if (existing && existing.length > 0) {
@@ -1046,13 +1105,17 @@ function renderWeek() {
   const dayLabels = { sunday: 'Sun', mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri' };
   const dayMap = { 0: 'sunday', 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri' };
 
-  // Render tonight's dinner
-  renderTonight(dayLabels);
+  // Render tonight's dinner (only for this week)
+  if (viewingWeek === 'this') renderTonight(dayLabels);
+
+  const plan = getActivePlan();
+  const lks = getActiveLocks();
+  const lefts = getActiveLeftovers();
 
   let html = '';
 
   // Sunday
-  const sunRecipe = recipes.find(r => r.id === weekPlan.sunday);
+  const sunRecipe = recipes.find(r => r.id === plan.sunday);
   html += `<div class="sunday-card">
     <div class="sunday-header">
       <div>
@@ -1067,7 +1130,7 @@ function renderWeek() {
       <div class="card-actions">
         <button class="btn-small" title="Pick recipe" onclick="openPickModal('sunday')">📋</button>
         <button class="btn-small" onclick="swapMeal('sunday')">🔀</button>
-        <button class="btn-small ${locks.sunday ? 'locked' : ''}" onclick="toggleLock('sunday')">${locks.sunday ? '🔒' : '🔓'}</button>
+        <button class="btn-small ${lks.sunday ? 'locked' : ''}" onclick="toggleLock('sunday')">${lks.sunday ? '🔒' : '🔓'}</button>
         ${sunRecipe ? `<button class="btn-clear" title="Clear meal" onclick="clearMeal('sunday')">✕</button>` : ''}
       </div>
     </div>
@@ -1078,8 +1141,8 @@ function renderWeek() {
   // Mon-Fri
   html += '<div class="weekday-grid">';
   ['mon', 'tue', 'wed', 'thu', 'fri'].forEach(day => {
-    const recipe = recipes.find(r => r.id === weekPlan[day]);
-    const isLeftover = leftovers[day];
+    const recipe = recipes.find(r => r.id === plan[day]);
+    const isLeftover = lefts[day];
     const isSkip = useThemes && dayThemes[day] === 'skip';
     const themeInfo = useThemes && dayThemes[day] !== 'any' ? MEAL_TYPES.find(mt => mt.id === dayThemes[day]) : null;
 
@@ -1111,7 +1174,7 @@ function renderWeek() {
           ${!isLeftover ? `<button class="btn-small" title="Lazy swap" onclick="lazySwap('${day}')" style="${recipe && recipe.tags && recipe.tags.includes('lazy') ? 'color:#8B5E3C;border-color:#8B5E3C;' : ''}">🛋️</button>
           <button class="btn-small" title="Pick recipe" onclick="openPickModal('${day}')">📋</button>
           <button class="btn-small" onclick="swapMeal('${day}')">🔀</button>
-          <button class="btn-small ${locks[day] ? 'locked' : ''}" onclick="toggleLock('${day}')">${locks[day] ? '🔒' : '🔓'}</button>
+          <button class="btn-small ${lks[day] ? 'locked' : ''}" onclick="toggleLock('${day}')">${lks[day] ? '🔒' : '🔓'}</button>
           ${recipe ? `<button class="btn-clear" title="Clear meal" onclick="clearMeal('${day}')">✕</button>` : ''}` : ''}
         </div>
       </div>
@@ -1191,9 +1254,10 @@ function renderIngredientDropdown(recipe) {
 
 function renderToddler() {
   const toddlerRecipes = recipes.filter(r => r.tags && r.tags.includes('toddler') && !r.archived);
+  const activeSlots = getActiveToddlerSlots();
   let html = '';
   const slotLabels = ['Meal 1', 'Meal 2', 'Meal 3'];
-  toddlerSlots.forEach((id, i) => {
+  activeSlots.forEach((id, i) => {
     const recipe = recipes.find(r => r.id === id);
     html += `<div class="toddler-card">
       <div class="day-header">
@@ -1235,29 +1299,37 @@ function renderShopList() {
     'Other': { icon: '🛒', items: [] }
   };
 
-  // Collect all ingredients from planned meals
+  // Collect all ingredients from planned meals based on scope
   const allIngs = [];
   const days = ['sunday', 'mon', 'tue', 'wed', 'thu', 'fri'];
-  days.forEach(day => {
-    if (leftovers[day]) return;
-    const recipe = recipes.find(r => r.id === weekPlan[day]);
-    if (recipe && recipe.ingredients) {
-      recipe.ingredients.forEach(ing => {
-        allIngs.push({ ...ing, source: recipe.name });
-      });
-    }
-  });
 
-  // Toddler meals
-  if (toddlerInShopList) {
-    toddlerSlots.forEach(id => {
-      const recipe = recipes.find(r => r.id === id);
+  function collectFromWeek(plan, lefts, tSlots, suffix) {
+    days.forEach(day => {
+      if (lefts[day]) return;
+      const recipe = recipes.find(r => r.id === plan[day]);
       if (recipe && recipe.ingredients) {
         recipe.ingredients.forEach(ing => {
-          allIngs.push({ ...ing, source: recipe.name + ' (T)' });
+          allIngs.push({ ...ing, source: recipe.name + suffix });
         });
       }
     });
+    if (toddlerInShopList) {
+      tSlots.forEach(id => {
+        const recipe = recipes.find(r => r.id === id);
+        if (recipe && recipe.ingredients) {
+          recipe.ingredients.forEach(ing => {
+            allIngs.push({ ...ing, source: recipe.name + ' (T)' + suffix });
+          });
+        }
+      });
+    }
+  }
+
+  if (shopScope === 'this' || shopScope === 'both') {
+    collectFromWeek(weekPlan, leftovers, toddlerSlots, '');
+  }
+  if (shopScope === 'next' || shopScope === 'both') {
+    collectFromWeek(nextWeekPlan, nextWeekLeftovers, nextWeekToddlerSlots, shopScope === 'both' ? ' (next)' : '');
   }
 
   // Filter out staples
@@ -1312,37 +1384,72 @@ function renderShopList() {
 
   let totalItems = Object.values(combined).length + manualItems.length;
   const manualCount = manualItems.length;
-  let html = `<div class="shop-stats"><strong>${totalItems}</strong> items from <strong>${days.filter(d => !leftovers[d] && weekPlan[d]).length + toddlerSlots.filter(Boolean).length}</strong> meals${manualCount > 0 ? ` · <strong>${manualCount}</strong> added` : ''}</div>`;
+
+  // Split all items into unchecked and checked
+  const uncheckedByAisle = {};
+  const checkedItems = [];
+  Object.entries(aisles).forEach(([name, aisle]) => {
+    if (aisle.items.length === 0) return;
+    aisle.items.forEach(item => {
+      const key = item.name.toLowerCase().trim();
+      const isChecked = shopChecked[key] || shopChecked[mergeKey(item.name)];
+      if (isChecked) {
+        checkedItems.push({ ...item, aisleName: name, aisleIcon: aisle.icon });
+      } else {
+        if (!uncheckedByAisle[name]) uncheckedByAisle[name] = { icon: aisle.icon, items: [] };
+        uncheckedByAisle[name].items.push(item);
+      }
+    });
+  });
+
+  const uncheckedCount = totalItems - checkedItems.length;
+  let html = `<div class="shop-stats"><strong>${uncheckedCount}</strong> to buy · <strong>${checkedItems.length}</strong> done${manualCount > 0 ? ` · <strong>${manualCount}</strong> added` : ''}</div>`;
 
   if (totalItems === 0) {
     html += '<p style="color:var(--text-muted);font-size:13px;">Generate a week\'s meals to see your shopping list here.</p>';
   }
 
-  Object.entries(aisles).forEach(([name, aisle]) => {
-    if (aisle.items.length === 0) return;
+  // Render unchecked items by aisle
+  Object.entries(uncheckedByAisle).forEach(([name, aisle]) => {
     html += `<div class="aisle-group"><div class="aisle-title"><span class="aisle-icon">${aisle.icon}</span>${name}</div>`;
     aisle.items.forEach(item => {
-      const key = item.name.toLowerCase().trim();
-      const isChecked = shopChecked[key];
-      const sources = item.sources ? [...item.sources].join(', ') : '';
-      const isManual = item.manual;
-      const mergeClass = mergeMode ? 'merge-mode' : '';
-      const mergeSelClass = mergeSelections.includes(key) ? 'merge-selected' : '';
-      const clickAction = mergeMode
-        ? `selectForMerge('${key.replace(/'/g, "\\'")}', '${item.name.replace(/'/g, "\\'")}', '${item.qty}', '${(item.unit||'').replace(/'/g, "\\'")}', '${item.aisle}')`
-        : `toggleShopItem('${key.replace(/'/g, "\\'")}')`;
-      html += `<div class="shop-item ${isChecked ? 'checked-off' : ''} ${mergeClass} ${mergeSelClass}" onclick="${clickAction}">
-        <div class="check ${isChecked ? 'checked' : ''}" ${mergeMode ? 'style="display:none"' : ''}></div>
-        ${mergeMode ? '<span style="font-size:16px;margin-right:4px;">🔗</span>' : ''}
-        <span class="shop-item-name">${item.name}${isManual ? ' <span class="manual-badge">added</span>' : ''}</span>
-        <span class="shop-item-qty ${isManual ? 'editable' : ''}" ${isManual && !mergeMode ? `onclick="event.stopPropagation();editManualQty('${key.replace(/'/g, "\\'")}')"` : ''}>${item.qty}${item.unit && !item.qty.includes(item.unit) ? ' ' + item.unit : ''}</span>
-        <span class="shop-item-source">${!isManual ? (sources.length > 20 ? 'Multiple' : sources) : ''}</span>
-      </div>`;
+      html += renderShopItem(item, false);
     });
     html += '</div>';
   });
 
+  // Render checked items in collapsible section at bottom
+  if (checkedItems.length > 0) {
+    html += `<div style="margin-top:20px;border-top:1px solid var(--border);padding-top:12px;">
+      <button class="expand-toggle" onclick="toggleExpand(this)" style="background:var(--green-light);border-color:var(--green);color:var(--green);">
+        <span class="arrow">▼</span> ✓ Done (${checkedItems.length})
+      </button>
+      <div class="expand-content">`;
+    checkedItems.forEach(item => {
+      html += renderShopItem(item, true);
+    });
+    html += '</div></div>';
+  }
+
   document.getElementById('shop-view').innerHTML = html;
+}
+
+function renderShopItem(item, isChecked) {
+  const key = item.name.toLowerCase().trim();
+  const sources = item.sources ? [...item.sources].join(', ') : '';
+  const isManual = item.manual;
+  const mergeClass = mergeMode ? 'merge-mode' : '';
+  const mergeSelClass = mergeSelections.includes(key) ? 'merge-selected' : '';
+  const clickAction = mergeMode
+    ? `selectForMerge('${key.replace(/'/g, "\\'")}', '${item.name.replace(/'/g, "\\'")}', '${item.qty}', '${(item.unit||'').replace(/'/g, "\\'")}', '${item.aisle}')`
+    : `toggleShopItem('${key.replace(/'/g, "\\'")}')`;
+  return `<div class="shop-item ${isChecked ? 'checked-off' : ''} ${mergeClass} ${mergeSelClass}" onclick="${clickAction}">
+    <div class="check ${isChecked ? 'checked' : ''}" ${mergeMode ? 'style="display:none"' : ''}></div>
+    ${mergeMode ? '<span style="font-size:16px;margin-right:4px;">🔗</span>' : ''}
+    <span class="shop-item-name">${item.name}${isManual ? ' <span class="manual-badge">added</span>' : ''}</span>
+    <span class="shop-item-qty ${isManual ? 'editable' : ''}" ${isManual && !mergeMode ? `onclick="event.stopPropagation();editManualQty('${key.replace(/'/g, "\\'")}')"` : ''}>${item.qty}${item.unit && !item.qty.includes(item.unit) ? ' ' + item.unit : ''}</span>
+    <span class="shop-item-source">${!isManual ? (sources.length > 20 ? 'Multiple' : sources) : ''}</span>
+  </div>`;
 }
 
 // ═══════════════════════════════════════
@@ -1456,30 +1563,34 @@ function renderAll() {
 // ACTIONS: WEEK PLANNER
 // ═══════════════════════════════════════
 function generateWeek() {
+  generateWeekInto(weekPlan, locks, leftovers, toddlerSlots);
+  shopChecked = {};
+  manualItems = [];
+  swapHistory = {};
+}
+
+function generateWeekInto(plan, lks, lefts, tSlots) {
   const adultRecipes = recipes.filter(r => !r.archived && !(r.tags && r.tags.includes('toddler')));
   const slowCooker = adultRecipes.filter(r => r.tags && r.tags.includes('slow_cooker'));
   const regular = adultRecipes.filter(r => !(r.tags && r.tags.includes('slow_cooker')));
 
-  // Sunday — slow cooker if available
-  if (!locks.sunday) {
+  if (!lks.sunday) {
     if (useThemes && dayThemes.sunday === 'skip') {
-      weekPlan.sunday = null;
+      plan.sunday = null;
     } else {
       const pool = slowCooker.length > 0 ? slowCooker : adultRecipes;
-      weekPlan.sunday = pickRandom(pool, [])?.id || null;
+      plan.sunday = pickRandom(pool, [])?.id || null;
     }
   }
 
-  // Mon-Fri
-  const used = [weekPlan.sunday].filter(Boolean);
+  const used = [plan.sunday].filter(Boolean);
   ['mon', 'tue', 'wed', 'thu', 'fri'].forEach(day => {
-    if (locks[day] || leftovers[day]) return;
+    if (lks[day] || lefts[day]) return;
 
-    // Handle themes
     if (useThemes) {
       const theme = dayThemes[day];
       if (theme === 'skip') {
-        weekPlan[day] = null;
+        plan[day] = null;
         return;
       }
       if (theme !== 'any') {
@@ -1487,29 +1598,33 @@ function generateWeek() {
         if (themedPool.length > 0) {
           const pick = pickRandom(themedPool, used);
           if (pick) {
-            weekPlan[day] = pick.id;
+            plan[day] = pick.id;
             used.push(pick.id);
           }
           return;
         }
-        // Fall through to regular pool if themed pool is empty
       }
     }
 
     const pick = pickRandom(regular.length >= 5 ? regular : adultRecipes, used);
     if (pick) {
-      weekPlan[day] = pick.id;
+      plan[day] = pick.id;
       used.push(pick.id);
     }
   });
 
-  generateToddler();
-  shopChecked = {};
-  manualItems = [];
+  // Generate toddler slots for this plan
+  const toddlerPool = recipes.filter(r => !r.archived && r.tags && r.tags.includes('toddler'));
+  const tUsed = [];
+  for (let i = 0; i < tSlots.length; i++) {
+    const pick = pickRandom(toddlerPool, tUsed);
+    if (pick) { tSlots[i] = pick.id; tUsed.push(pick.id); } else { tSlots[i] = null; }
+  }
+
   swapHistory = {};
   saveState();
   renderAll();
-  showToast('Week generated! 🎲');
+  showToast((viewingWeek === 'next' ? 'Next week' : 'Week') + ' generated! 🎲');
 }
 
 function pickRandom(pool, exclude) {
@@ -1557,19 +1672,20 @@ function swapMeal(day) {
   if (pool.length === 0) return showToast('No recipes available to swap');
 
   // Get recipes currently assigned to OTHER days (don't offer these)
+  const plan = getActivePlan();
   const otherDayIds = new Set();
   if (!isToddler) {
     ['sunday', 'mon', 'tue', 'wed', 'thu', 'fri'].forEach(d => {
-      if (d !== day && weekPlan[d]) otherDayIds.add(weekPlan[d]);
+      if (d !== day && plan[d]) otherDayIds.add(plan[d]);
     });
   } else {
-    toddlerSlots.forEach((id, i) => { if (i !== day && id) otherDayIds.add(id); });
+    const tSlots = getActiveToddlerSlots();
+    tSlots.forEach((id, i) => { if (i !== day && id) otherDayIds.add(id); });
   }
 
-  // Init swap history for this slot if needed
   if (!swapHistory[dayKey]) swapHistory[dayKey] = [];
 
-  const currentId = isToddler ? toddlerSlots[day] : weekPlan[day];
+  const currentId = isToddler ? getActiveToddlerSlots()[day] : plan[day];
   if (currentId && !swapHistory[dayKey].includes(currentId)) {
     swapHistory[dayKey].push(currentId);
   }
@@ -1590,9 +1706,9 @@ function swapMeal(day) {
   const pick = available[Math.floor(Math.random() * available.length)];
 
   if (isToddler) {
-    toddlerSlots[day] = pick.id;
+    setActiveToddlerSlot(day, pick.id);
   } else {
-    weekPlan[day] = pick.id;
+    setActivePlan(day, pick.id);
   }
   saveState();
   renderWeek();
@@ -1621,18 +1737,19 @@ function lazySwap(day) {
   if (pool.length === 0) return showToast('No lazy recipes found — tag some with 🛋️');
 
   // Exclude other days' recipes
+  const plan = getActivePlan();
   const otherDayIds = new Set();
   ['sunday', 'mon', 'tue', 'wed', 'thu', 'fri'].forEach(d => {
-    if (d !== day && weekPlan[d]) otherDayIds.add(weekPlan[d]);
+    if (d !== day && plan[d]) otherDayIds.add(plan[d]);
   });
 
-  const currentId = weekPlan[day];
+  const currentId = plan[day];
   let available = pool.filter(r => !otherDayIds.has(r.id) && r.id !== currentId);
   if (available.length === 0) available = pool.filter(r => r.id !== currentId);
   if (available.length === 0) available = pool;
 
   const pick = available[Math.floor(Math.random() * available.length)];
-  weekPlan[day] = pick.id;
+  setActivePlan(day, pick.id);
   saveState();
   renderWeek();
   if (document.querySelector('.tab.active').dataset.tab === 'shopping') renderShopList();
@@ -1700,9 +1817,9 @@ function renderPickList() {
 
 function pickRecipe(recipeId) {
   if (typeof pickingDay === 'number') {
-    toddlerSlots[pickingDay] = recipeId;
+    setActiveToddlerSlot(pickingDay, recipeId);
   } else {
-    weekPlan[pickingDay] = recipeId;
+    setActivePlan(pickingDay, recipeId);
   }
   closePickModal();
   saveState();
@@ -1725,25 +1842,32 @@ function generateToddler() {
 }
 
 function toggleLock(day) {
-  locks[day] = !locks[day];
+  const lks = getActiveLocks();
+  lks[day] = !lks[day];
   saveState();
   renderWeek();
 }
 
 function toggleLeftover(day) {
-  leftovers[day] = !leftovers[day];
-  if (leftovers[day]) {
-    weekPlan[day] = null;
-    locks[day] = false;
+  const lefts = getActiveLeftovers();
+  const plan = getActivePlan();
+  const lks = getActiveLocks();
+  lefts[day] = !lefts[day];
+  if (lefts[day]) {
+    plan[day] = null;
+    lks[day] = false;
   }
   saveState();
   renderWeek();
 }
 
 function clearMeal(day) {
-  weekPlan[day] = null;
-  locks[day] = false;
-  if (day !== 'sunday') leftovers[day] = false;
+  const plan = getActivePlan();
+  const lks = getActiveLocks();
+  const lefts = getActiveLeftovers();
+  plan[day] = null;
+  lks[day] = false;
+  if (day !== 'sunday') lefts[day] = false;
   saveState();
   renderWeek();
 }
