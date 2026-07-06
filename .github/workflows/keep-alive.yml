@@ -13,6 +13,6 @@ jobs:
         run: |
           curl -s -o /dev/null -w "%{http_code}" \
             "https://mbmsdukfvrokrfxrzggo.supabase.co/rest/v1/recipes?select=id&limit=1" \
-            -H "apikey: sb_publishable_wInlRPB2LvSUc2U0uk9jJQ_K2ZAXZbF" \
-            -H "Authorization: Bearer sb_publishable_wInlRPB2LvSUc2U0uk9jJQ_K2ZAXZbF"
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}"
           echo " - Supabase pinged successfully"
